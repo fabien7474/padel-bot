@@ -25,7 +25,7 @@ OUT = Path(os.environ.get("PADEL_OUT") or HERE / "resultats")             # où 
 DATA = Path(os.environ.get("PADEL_DATA") or (Path(os.environ["LOCALAPPDATA"]) / "padel-bot" if os.environ.get("LOCALAPPDATA")
             else Path.home() / ".local" / "share" / "padel-bot"))
 PROFILE = DATA / "profil"
-LOG = DATA / "bot.log"
+LOG = HERE / "bot.log"                                                    # journal technique (sans noms)
 STATUS = DATA / "statut.json"
 ADOC = os.environ.get("PADEL_ADOC", "https://adoc.app.fft.fr/adoc/")
 HOME_URL = ADOC + "accueil.do?method=read"
