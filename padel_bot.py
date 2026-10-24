@@ -29,7 +29,10 @@ LOG = HERE / "bot.log"                                                    # jour
 STATUS = DATA / "statut.json"
 ADOC = os.environ.get("PADEL_ADOC", "https://adoc.app.fft.fr/adoc/")
 HOME_URL = ADOC + "accueil.do?method=read"
-PARIS = ZoneInfo("Europe/Paris")
+try:
+    PARIS = ZoneInfo("Europe/Paris")  # sous Windows, nécessite le paquet tzdata (requirements.txt)
+except Exception:
+    PARIS = None                      # à défaut : heure locale de l'ordinateur
 
 
 def log(msg):
