@@ -27,6 +27,7 @@ DATA = Path(os.environ.get("PADEL_DATA") or (Path(os.environ["LOCALAPPDATA"]) / 
 PROFILE = DATA / "profil"
 LOG = HERE / "bot.log"                                                    # journal technique (sans noms)
 STATUS = DATA / "statut.json"
+COOKIES = DATA / "session.json"   # cookies de session (hors dossier synchronisé, jamais publiés)
 ADOC = os.environ.get("PADEL_ADOC", "https://adoc.app.fft.fr/adoc/")
 HOME_URL = ADOC + "accueil.do?method=read"
 try:
@@ -69,6 +70,19 @@ def launch(p, headless):
     PROFILE.mkdir(parents=True, exist_ok=True)
     return p.chromium.launch_persistent_context(str(PROFILE), channel=os.environ.get("PADEL_CHANNEL", "msedge" if os.name == "nt" else "") or None, headless=headless,
                                                 locale="fr-FR", timezone_id="Europe/Paris")
+
+
+def load_cookies(ctx):
+    """Le profil ne garde pas les cookies « de session » d'un lancement à l'autre : on les recharge."""
+    if COOKIES.exists():
+        try:
+            ctx.add_cookies(json.loads(COOKIES.read_text(encoding="utf-8")))
+        except Exception as e:
+            log(f"Cookies non rechargés : {e}")
+
+
+def save_cookies(ctx):
+    COOKIES.write_text(json.dumps(ctx.cookies()), encoding="utf-8")
 
 
 def logged_in(page):
@@ -168,9 +182,12 @@ def run_once():
     with sync_playwright() as p:
         ctx = launch(p, headless=True)
         try:
+            load_cookies(ctx)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             ensure_session(page)
             res = page.evaluate(script)  # le script vérifie lui-même la session et renvoie l'échec si besoin
+            if res.get("ok"):
+                save_cookies(ctx)        # garde la session à jour pour le passage suivant
         finally:
             ctx.close()
     export(res)
@@ -187,6 +204,7 @@ def run_once():
                    "Lancez « python padel_bot.py --login » et reconnectez-vous à ADOC.")
     STATUS.write_text(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "ok": res.get("ok"),
                                   "error": res.get("error")}), encoding="utf-8")
+    return 0 if res.get("ok") else 2   # 0x2 dans le Planificateur = session à reconnecter
 
 
 def login():
@@ -197,9 +215,11 @@ def login():
         ctx = launch(p, headless=False)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(ADOC)
-        input("\nConnecté ? Appuyez sur Entrée... ")
+        input("\nUne fois sur l'accueil ADOC (votre nom en haut à droite), appuyez sur Entrée ici... ")
         page.goto(HOME_URL, wait_until="domcontentloaded")
         ok = logged_in(page)
+        if ok:
+            save_cookies(ctx)
         ctx.close()
     print("Session enregistrée, le bot peut tourner." if ok else
           "Je ne vois pas de session ADOC ouverte : relancez et terminez bien la connexion.")
@@ -208,7 +228,12 @@ def login():
 
 if __name__ == "__main__":
     try:
-        login() if "--login" in sys.argv else run_once()
+        if "--login" in sys.argv:
+            login()
+        else:
+            sys.exit(run_once())
+    except SystemExit:
+        raise
     except Exception:
         log("ERREUR\n" + traceback.format_exc())
         sys.exit(1)
