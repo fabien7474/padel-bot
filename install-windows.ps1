@@ -1,4 +1,4 @@
-# Installation du bot padel sur Windows
+﻿# Installation du bot padel sur Windows
 # Clic droit > « Exécuter avec PowerShell » (ou : powershell -ExecutionPolicy Bypass -File install-windows.ps1)
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path

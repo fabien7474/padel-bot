@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 HERE = Path(__file__).resolve().parent
 _env = HERE / ".env"
 if _env.exists():
-    for _l in _env.read_text(encoding="utf-8").splitlines():
+    for _l in _env.read_text(encoding="utf-8-sig").splitlines():
         if "=" in _l and not _l.lstrip().startswith("#"):
             _k, _v = _l.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip().strip('"'))
