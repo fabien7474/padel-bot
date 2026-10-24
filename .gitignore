@@ -1,0 +1,10 @@
+# Données personnelles des adhérents et session : ne jamais publier
+resultats/
+*.csv
+*.json
+!package.json
+.env
+profil/
+*.log
+.venv/
+__pycache__/
