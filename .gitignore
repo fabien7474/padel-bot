@@ -12,3 +12,5 @@ historique/
 *.jsonl
 *.importe
 !.env.example
+.history/
+.vscode/
