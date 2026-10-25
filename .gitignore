@@ -11,3 +11,4 @@ __pycache__/
 historique/
 *.jsonl
 *.importe
+!.env.example

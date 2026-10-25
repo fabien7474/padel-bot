@@ -43,14 +43,23 @@ CSV séparés par `;`, UTF-8 avec BOM : ils s'ouvrent directement dans Excel.
 
 ## Installation
 
-**Windows** (utilise Edge) : clic droit sur `install-windows.ps1` › *Exécuter avec PowerShell*. Le script installe Python et Playwright, demande le dossier de sortie, crée la tâche planifiée « Bot padel ADOC » (toutes les 10 min) et ouvre Edge pour la connexion ADOC.
+**Windows** (utilise Edge) :
+
+```powershell
+git clone https://github.com/fabien7474/padel-bot.git
+```
+
+puis clic droit sur `install-windows.ps1` › *Exécuter avec PowerShell*. Le script installe Python et Playwright, crée la tâche planifiée « Bot padel ADOC » (toutes les 10 min) et ouvre Edge pour la connexion ADOC. Relancer le script après avoir déplacé le dossier remet la tâche à jour.
+
+**Mise à jour** : double-clic sur `mettre-a-jour.cmd` (`git pull` + dépendances). Les résultats, le `.env` et la session ne sont jamais touchés par Git.
+
+**Résultats** : par défaut dans le sous-dossier `resultats/` du projet (exclu de Git). Pour un autre dossier (par ex. Google Drive), copier `.env.example` en `.env` et renseigner `PADEL_OUT`.
 
 **Linux / mini-PC** :
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt && playwright install --with-deps chromium
-echo "PADEL_OUT=$HOME/padel-resultats" > .env
 python padel_bot.py --login        # nécessite un écran la première fois
 # toutes les 10 minutes :
 ( crontab -l; echo "*/10 * * * * cd $PWD && .venv/bin/python padel_bot.py" ) | crontab -
