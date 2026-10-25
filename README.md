@@ -24,6 +24,20 @@ Lors d'une substitution, le bot précise aussi si l'adhérent ajouté avait déj
 | `padel-reservations.csv` / `.json` | liste brute des réservations J à J+7 | état courant |
 | `padel-journal.json` | tout le journal | — |
 | `padel-rapport.html` | rapport lisible (double-clic pour l'ouvrir) | — |
+| `padel-historique-cas-suspects.csv` | **tous** les cas suspects depuis le début | historique permanent |
+| `padel-historique-annulations.csv` | **toutes** les annulations depuis le début | historique permanent |
+| `historique/padel-evenements-AAAA.jsonl` | journal infalsifiable de chaque événement (création, annulation, modification, cas suspect) | `PADEL_HISTORY_YEARS` ans (3 par défaut) |
+
+## Historique permanent (justification des avertissements)
+
+Les fichiers ci-dessus « courants » sont des vues glissantes. Pour pouvoir justifier un avertissement ou une sanction, chaque événement est aussi **ajouté** (jamais réécrit) dans `historique/padel-evenements-AAAA.jsonl` :
+
+- une ligne par événement, avec l'heure du constat et l'état exact de la réservation (piste, horaire, joueurs) avant et après ;
+- chaque ligne contient l'**empreinte SHA-256** de la précédente : toute modification ou suppression casse la chaîne ;
+- `python padel_bot.py --verifier` contrôle l'intégrité et affiche « INTACT » ou la ligne altérée ;
+- les CSV `padel-historique-*.csv` sont régénérés à partir de ce journal et portent l'empreinte de chaque ligne.
+
+Le bot constate ce qu'il voit à chaque passage : une annulation est datée entre deux passages (« vue à … , absente à … »).
 
 CSV séparés par `;`, UTF-8 avec BOM : ils s'ouvrent directement dans Excel.
 
@@ -48,10 +62,11 @@ Le bot ne stocke **aucun mot de passe**. `python padel_bot.py --login` ouvre un 
 
 ## Données personnelles (RGPD)
 
-Les fichiers contiennent des noms d'adhérents : ne pas les publier, ne pas les mettre dans ce dépôt (le `.gitignore` les exclut). Durées de conservation limitées dans `monitor.js`. Traitement à mentionner au registre du club et dans le règlement intérieur.
+Les fichiers contiennent des noms d'adhérents : ne pas les publier, ne pas les mettre dans ce dépôt (le `.gitignore` les exclut). Vues courantes : durées limitées dans `monitor.js`. Historique permanent : `PADEL_HISTORY_YEARS` ans (3 par défaut), durée à fixer par le bureau (finalité : justification des avertissements et sanctions) et à inscrire au registre des traitements et dans le règlement intérieur.
 
 ## Structure
 
 - `monitor.js` : lecture d'ADOC et détection (exécuté dans la page ADOC) ;
 - `padel_bot.py` : lancement du navigateur, session, export CSV/JSON, notifications ;
-- `report.py` : rapport HTML autonome.
+- `report.py` : rapport HTML autonome ;
+- `history.py` : historique permanent chaîné.

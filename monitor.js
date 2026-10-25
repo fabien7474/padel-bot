@@ -237,6 +237,13 @@ async (opts = {}) => {
     created: created.length, cancelled: cancelled.length, modified: modified.length, imported,
     alerts: alerts.map(a => ({ level: a.level, score: a.score, date: a.date, slot: `${a.start}-${a.end}`, before: a.before.players, after: a.after.players, reasons: a.reasons })),
     rows,
+    // détail des événements de ce passage, pour l'historique permanent (côté Python)
+    events: {
+      created: created.map(r => ({ id: r.id, date: r.date, start: r.start, end: r.end, court: r.court, players: r.players, ticket: !!r.ticket, early: !!r.early, firstSeen: r.firstSeen, leadDays: r.leadDays })),
+      cancelled: cancelled.map(c => ({ id: c.id, date: c.date, start: c.start, end: c.end, court: c.court, players: c.players, early: !!c.early, firstSeen: c.firstSeen, lastSeen: c.cancelledAfter, detected: c.detected, hoursBeforeSlot: c.hoursBeforeSlot })),
+      modified,
+      alerts
+    },
     reservations: Object.values(state.active).sort((a, b) => (a.date + a.start + a.court).localeCompare(b.date + b.start + b.court))
       .map(r => ({ id: r.id, date: r.date, start: r.start, end: r.end, court: r.court, players: r.players, ticket: !!r.ticket, firstSeen: r.firstSeen, early: !!r.early, baseline: !!r.baseline }))
   };

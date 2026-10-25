@@ -3,6 +3,7 @@
 Usage :
   python padel_bot.py --login   ouvre Edge pour vous connecter une fois à ADOC (à refaire si la session expire)
   python padel_bot.py           un passage (lancé toutes les 10 minutes par le Planificateur de tâches)
+  python padel_bot.py --verifier  contrôle que l'historique permanent n'a pas été modifié
 
 Le bot n'enregistre aucun mot de passe : il réutilise la session ouverte dans son propre profil Edge,
 rangé hors du dossier synchronisé (Windows : %LOCALAPPDATA%\\padel-bot ; Linux : ~/.local/share/padel-bot).
@@ -27,6 +28,7 @@ DATA = Path(os.environ.get("PADEL_DATA") or (Path(os.environ["LOCALAPPDATA"]) / 
 PROFILE = DATA / "profil"
 LOG = HERE / "bot.log"                                                    # journal technique (sans noms)
 STATUS = DATA / "statut.json"
+HISTORY_YEARS = int(os.environ.get("PADEL_HISTORY_YEARS", "3"))         # conservation de l'historique permanent
 COOKIES = DATA / "session.json"   # cookies de session (hors dossier synchronisé, jamais publiés)
 ADOC = os.environ.get("PADEL_ADOC", "https://adoc.app.fft.fr/adoc/")
 HOME_URL = ADOC + "accueil.do?method=read"
@@ -198,6 +200,31 @@ def export(res):
         tmp.unlink(missing_ok=True)
 
 
+def archive(res, imported, prev):
+    """Historique permanent, chaîné et jamais réécrit (voir history.py)."""
+    import history
+    root = OUT / "historique"
+    evs = history.from_result(res, imported)
+    if not res.get("ok") and prev.get("error") == res.get("error"):
+        evs = [e for e in evs if e["type"] != "passage_en_echec"]   # un seul événement par période d'échec
+    n = history.append(root, evs)
+    history.purge(root, HISTORY_YEARS, log)
+    if n or not (OUT / "padel-historique-cas-suspects.csv").exists():
+        history.write_cumulative_csv(root, OUT, loc, day, write_csv)
+    if n:
+        log(f"Historique : {n} événement(s) ajouté(s)")
+
+
+def verify_history():
+    import history
+    res = history.verify(OUT / "historique")
+    if not res:
+        print("Aucun historique pour l'instant.")
+    for name, n, ok, detail in res:
+        print(f"{name} : {n} événements, {'INTACT' if ok else 'ALTÉRÉ – ' + detail}")
+    return 0 if all(r[2] for r in res) else 3
+
+
 def run_once():
     from playwright.sync_api import sync_playwright
     script = (HERE / "monitor.js").read_text(encoding="utf-8")
@@ -213,6 +240,7 @@ def run_once():
             if imp.exists():
                 opts["import"] = json.loads(imp.read_text(encoding="utf-8"))
             res = page.evaluate(script, opts)  # le script vérifie lui-même la session et renvoie l'échec si besoin
+            imported = opts.get("import") if res.get("ok") else None
             if res.get("ok") and imp.exists():
                 imp.replace(imp.with_suffix(".importe"))
                 log(f"Historique importé : {res.get('imported', 0)} éléments")
@@ -221,6 +249,7 @@ def run_once():
         finally:
             ctx.close()
     export(res)
+    archive(res, imported, prev)
     if res.get("ok"):
         log(f"OK : {res['activeCount']} réservations suivies, {res['created']} nouvelles, "
             f"{res['cancelled']} annulées, {len(res['alerts'])} cas suspects")
@@ -285,6 +314,8 @@ if __name__ == "__main__":
     try:
         if "--login" in sys.argv:
             login()
+        elif "--verifier" in sys.argv:
+            sys.exit(verify_history())
         else:
             sys.exit(run_once())
     except SystemExit:

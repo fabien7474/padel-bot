@@ -8,3 +8,6 @@ profil/
 *.log
 .venv/
 __pycache__/
+historique/
+*.jsonl
+*.importe
