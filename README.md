@@ -61,7 +61,7 @@ Il peut être relancé sans risque, par exemple pour changer la fréquence ou ap
 | Action | Commande (Git Bash, dans le dossier du projet) | ou double-clic |
 |---|---|---|
 | Mettre à jour le bot | `git pull` | `mettre-a-jour.cmd` (`git pull` + dépendances) |
-| Lancer un passage à la main | `.venv/Scripts/python.exe padel_bot.py; echo $?` | `test-passage.cmd` |
+| Lancer un passage à la main (même pendant la pause) | `.venv/Scripts/python.exe padel_bot.py --forcer; echo $?` | `test-passage.cmd` |
 | Se reconnecter à ADOC | `.venv/Scripts/python.exe padel_bot.py --login` | `connexion-adoc.cmd` |
 | Vérifier l'intégrité de l'historique | `.venv/Scripts/python.exe padel_bot.py --verifier` | — |
 | Voir le journal technique | `tail -20 bot.log` | ouvrir `bot.log` |
@@ -87,6 +87,8 @@ Le bot ne stocke **aucun mot de passe**.
 
 Une fréquence de 15 à 30 minutes maintient les sessions actives plus longtemps.
 
+**Pause nocturne** : de minuit à 7h (réglable avec `PADEL_PAUSE`), la tâche se lance mais s'arrête aussitôt, sans contacter ADOC. Les changements faits pendant la nuit sont détectés au premier passage du matin. Une annulation de nuit est alors datée entre le dernier passage de la veille et celui du matin.
+
 ## Configuration
 
 Les réglages sont facultatifs. Pour en changer, copier `.env.example` en `.env` et décommenter les lignes voulues :
@@ -99,6 +101,7 @@ cp .env.example .env
 |---|---|---|
 | `PADEL_OUT` | dossier des résultats (par exemple un dossier Google Drive) | `resultats/` dans le projet |
 | `PADEL_HISTORY_YEARS` | conservation de l'historique permanent, en années | `3` |
+| `PADEL_PAUSE` | pause nocturne, sans aucun passage (`HH:MM-HH:MM`, peut chevaucher minuit ; `non` pour désactiver) | `00:00-07:00` |
 | `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
 | `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |
 

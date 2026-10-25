@@ -4,6 +4,7 @@ Usage :
   python padel_bot.py --login   ouvre Edge pour vous connecter une fois à ADOC (à refaire si la session expire)
   python padel_bot.py           un passage (lancé toutes les 10 minutes par le Planificateur de tâches)
   python padel_bot.py --verifier  contrôle que l'historique permanent n'a pas été modifié
+  python padel_bot.py --forcer    passage immédiat, même pendant la pause nocturne (PADEL_PAUSE)
 
 Le bot n'enregistre aucun mot de passe : il réutilise la session ouverte dans son propre profil Edge,
 rangé hors du dossier synchronisé (Windows : %LOCALAPPDATA%\\padel-bot ; Linux : ~/.local/share/padel-bot).
@@ -232,6 +233,20 @@ def verify_history():
     return 0 if all(r[2] for r in res) else 3
 
 
+def in_pause(now=None):
+    """Pause nocturne (PADEL_PAUSE, par défaut 00:00-07:00, heure locale). Vide ou « non » = pas de pause."""
+    spec = os.environ.get("PADEL_PAUSE", "00:00-07:00").strip()
+    if not spec or spec.lower() in ("non", "aucune", "off"):
+        return False
+    try:
+        a, b = [datetime.strptime(x.strip(), "%H:%M").time() for x in spec.split("-")]
+    except ValueError:
+        log(f"PADEL_PAUSE invalide ({spec}) : format attendu HH:MM-HH:MM")
+        return False
+    t = (now or (datetime.now(PARIS) if PARIS else datetime.now())).time()
+    return a <= t < b if a <= b else (t >= a or t < b)   # gère une pause à cheval sur minuit (ex. 23:00-06:00)
+
+
 def run_once():
     from playwright.sync_api import sync_playwright
     script = (HERE / "monitor.js").read_text(encoding="utf-8")
@@ -328,6 +343,8 @@ if __name__ == "__main__":
             login()
         elif "--verifier" in sys.argv:
             sys.exit(verify_history())
+        elif in_pause() and "--forcer" not in sys.argv:
+            sys.exit(0)   # pause nocturne : aucun accès à ADOC, rien d'écrit
         else:
             sys.exit(run_once())
     except SystemExit:
