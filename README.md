@@ -6,7 +6,6 @@ Surveille les réservations « Joueur » des pistes de padel dans ADOC (J à J+7
 - les **substitutions** : un créneau est annulé puis re-réservé avec au moins un joueur en commun et des noms différents ;
 - les **modifications de joueurs** sur une réservation existante ;
 - les **changements de mode de réservation** à joueurs identiques : ticket invitation (carnet) remplacé par l'adhésion padel ;
-- les **réservations simultanées** au-delà du maximum autorisé.
 
 Le bot **signale**, il ne sanctionne pas : toute décision reste humaine. L'historique permanent (voir plus bas) sert à justifier les avertissements et sanctions éventuels.
 
@@ -22,7 +21,7 @@ Chaque cas reçoit un score et un niveau : faible, moyen ou élevé (score ≥ 7
 | **Joueur noté externe (`*`, ticket invité) qui réapparaît comme adhérent** | +4 |
 | Réservation initiale faite dès l'ouverture (J-7) | +2 |
 | Invités ou externes dans la réservation initiale | +2 |
-| L'adhérent ajouté avait déjà des réservations à venir quand le créneau a été pris | +2 |
+| L'adhérent ajouté avait déjà des réservations à venir quand le créneau a été pris (Ten'Up l'empêchait donc de réserver lui-même) | +2 |
 | Nouvelle réservation faite après l'ouverture | +1 |
 | Même adhérent retiré à plusieurs reprises | +1 |
 
@@ -37,8 +36,6 @@ Pour chaque nouvelle réservation, et après chaque modification, le bot lit la 
 | Moins de tickets payants qu'au départ | +2 |
 
 Si la fiche n'est pas disponible, le bot se rabat sur l'indicateur « ticket » de la liste et sur les marqueurs `*`.
-
-Un adhérent présent dans **plus de `PADEL_MAX_SIMULT` réservations à venir** (2 par défaut) déclenche aussi un cas élevé. Le bot ne connaît pas le type d'adhésion de chacun : pour un adhérent limité à 1 réservation, il faut vérifier dans ADOC.
 
 ## Installation (Windows, Git Bash)
 
@@ -101,7 +98,6 @@ cp .env.example .env
 | Variable | Rôle | Défaut |
 |---|---|---|
 | `PADEL_OUT` | dossier des résultats (par exemple un dossier Google Drive) | `resultats/` dans le projet |
-| `PADEL_MAX_SIMULT` | réservations à venir simultanées autorisées par adhérent | `2` |
 | `PADEL_HISTORY_YEARS` | conservation de l'historique permanent, en années | `3` |
 | `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
 | `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |

@@ -5,8 +5,7 @@ async (opts = {}) => {
   const EARLY_LEAD_DAYS = 6.5;     // vue pour la 1re fois à ≥ 6,5 j du créneau = réservée dès l'ouverture
   const MATCH_WINDOW_H = 4;        // écart max entre annulation et nouvelle réservation
   const KEEP_CANCELLED_DAYS = 14;
-  const MAX_SIMULT = Number(opts.maxSimultaneous) || 2;
-  const MAX_DETAILS = Number(opts.maxDetails) || 60;   // fiches de réservation lues par passage (détail par joueur)   // réservations à venir simultanées autorisées par adhérent
+  const MAX_DETAILS = Number(opts.maxDetails) || 60;   // fiches de réservation lues par passage (détail par joueur)
   const now = new Date();
   const nowIso = now.toISOString();
 
@@ -256,23 +255,6 @@ async (opts = {}) => {
     alerts.push({ key, score, level: levelOf(score), reasons, date: m.date, start: m.start, end: m.end,
       before: { id: m.id, court: m.oldCourt, players: m.before, early: m.early, ticket: m.oldTicket, detail: m.beforeDetail }, after: { id: m.id, court: m.court, players: m.after, ticket: m.ticket, detail: m.afterDetail },
       common: m.after.filter(p => m.before.map(norm).includes(norm(p))), removed, added: mAdded, detected: nowIso });
-  }
-
-  // ---------- réservations simultanées ----------
-  const upcoming = Object.values(state.active).filter(r => slotStart(r) > now);
-  const byMember = {};
-  for (const r of upcoming) for (const p of members(r)) (byMember[norm(p)] = byMember[norm(p)] || { name: p, list: [] }).list.push(r);
-  for (const { name, list } of Object.values(byMember)) {
-    if (list.length <= MAX_SIMULT) continue;
-    list.sort((a, b) => slotStart(a) - slotStart(b));
-    const key = `quota:${norm(name)}:${list.map(r => r.id).sort().join(',')}`;
-    if (state.alertKeys.includes(key)) continue;
-    state.alertKeys.push(key);
-    const f = list[0];
-    alerts.push({ key, score: 7, level: 'élevé', date: f.date, start: f.start, end: f.end,
-      reasons: [`${name} figure dans ${list.length} réservations à venir (maximum ${MAX_SIMULT})`],
-      before: { id: f.id, court: list.map(r => `${r.date.slice(8, 10)}/${r.date.slice(5, 7)} ${r.start} ${r.court}`).join(' | '), players: [name] },
-      after: { id: '', court: '', players: [] }, common: [name], removed: [], added: [], detected: nowIso });
   }
 
   // ---------- import ponctuel d'un historique (ancien bot) ----------

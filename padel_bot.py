@@ -246,8 +246,7 @@ def run_once():
                     page.goto(SUIVI_URL, wait_until="load")
                 except Exception as e:
                     log(f"Page de suivi inaccessible ({e}) : passage sans fiches détaillées")
-            opts = {"maxSimultaneous": int(os.environ.get("PADEL_MAX_SIMULT", "2")),
-                    "maxDetails": int(os.environ.get("PADEL_MAX_DETAILS", "60"))}
+            opts = {"maxDetails": int(os.environ.get("PADEL_MAX_DETAILS", "60"))}
             imp = HERE / "import-historique.json"
             if imp.exists():
                 opts["import"] = json.loads(imp.read_text(encoding="utf-8"))
