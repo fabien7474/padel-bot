@@ -1,10 +1,11 @@
-async () => {
-  const VERSION = '1.0';
+async (opts = {}) => {
+  const VERSION = '1.1';
   const KEY = 'annecyPadelMonitor.v1';
   const DAYS_AHEAD = 7;            // fenêtre de réservation du club
   const EARLY_LEAD_DAYS = 6.5;     // vue pour la 1re fois à ≥ 6,5 j du créneau = réservée dès l'ouverture
   const MATCH_WINDOW_H = 4;        // écart max entre annulation et nouvelle réservation
   const KEEP_CANCELLED_DAYS = 14;
+  const MAX_SIMULT = Number(opts.maxSimultaneous) || 2;   // réservations à venir simultanées autorisées par adhérent
   const now = new Date();
   const nowIso = now.toISOString();
 
@@ -19,6 +20,17 @@ async () => {
   const isExternal = name => /\*$/.test(name.trim());
   const members = r => r.players.filter(p => !isGuest(p) && !isExternal(p));
   const hoursBetween = (a, b) => Math.abs(new Date(a) - new Date(b)) / 36e5;
+  // différence « multi-ensemble » : 3 invités → 2 invités = 1 invité retiré
+  const minus = (a, b) => { const left = b.map(norm); return a.filter(p => { const i = left.indexOf(norm(p)); if (i < 0) return true; left.splice(i, 1); return false; }); };
+  const levelOf = score => score >= 7 ? 'élevé' : score >= 5 ? 'moyen' : 'faible';
+  // Invité/externe remplacé par un adhérent : pratique de réservation anticipée d'un créneau (niveau élevé à lui seul)
+  const guestToMember = (removed, added) => removed.some(p => isGuest(p) || isExternal(p)) && added.some(p => !isGuest(p) && !isExternal(p));
+  // Adhérents ajoutés qui avaient déjà d'autres réservations à venir au moment de la réservation initiale
+  const busyAdded = (added, original, excludeIds) => added.filter(p => !isGuest(p) && !isExternal(p)).map(p => {
+    const others = Object.values(state.active).filter(r => !excludeIds.includes(r.id) && slotStart(r) > new Date(original.firstSeen || nowIso)
+      && new Date(r.firstSeen) <= new Date(original.firstSeen || nowIso) && r.players.map(norm).includes(norm(p)));
+    return others.length ? `${p} avait déjà ${others.length} réservation(s) à venir quand le créneau a été pris` : null;
+  }).filter(Boolean);
 
   // ---------- état et journal ----------
   let state;
@@ -142,13 +154,15 @@ async () => {
       if (hoursBetween(c.cancelledAfter, n.firstSeen) > MATCH_WINDOW_H + 1) continue;
       const key = `${c.id}>${n.id}`;
       if (state.alertKeys.includes(key)) continue;
-      const removed = c.players.filter(p => !n.players.map(norm).includes(norm(p)));
-      const added = n.players.filter(p => !c.players.map(norm).includes(norm(p)));
+      const removed = minus(c.players, n.players);
+      const added = minus(n.players, c.players);
       const guestsBefore = c.players.filter(p => isGuest(p) || isExternal(p)).length;
       let score = 3; const reasons = ['Annulation puis re-réservation du même créneau avec un joueur commun'];
       if (c.early) { score += 2; reasons.push('Réservation initiale faite dès l\'ouverture (J-7)'); }
       if (!n.early) { score += 1; reasons.push('Nouvelle réservation faite après l\'ouverture'); }
       if (guestsBefore) { score += 2; reasons.push(`${guestsBefore} invité(s)/externe(s) dans la réservation initiale`); }
+      if (guestToMember(removed, added)) { score += 4; reasons.push('Invité remplacé par un adhérent (créneau réservé à l\'avance sans les vrais noms)'); }
+      for (const b of busyAdded(added, c, [c.id, n.id])) { score += 2; reasons.push(b); }
       for (const p of removed) {
         if (isGuest(p)) continue;
         const k = norm(p); state.removedCounts[k] = (state.removedCounts[k] || 0) + 1;
@@ -156,7 +170,7 @@ async () => {
       }
       state.alertKeys.push(key);
       alerts.push({
-        key, score, level: score >= 7 ? 'élevé' : score >= 5 ? 'moyen' : 'faible', reasons,
+        key, score, level: levelOf(score), reasons,
         date: c.date, start: c.start, end: c.end,
         before: { id: c.id, court: c.court, players: c.players, firstSeen: c.firstSeen, early: c.early, cancelledBetween: [c.cancelledAfter, c.detected] },
         after: { id: n.id, court: n.court, players: n.players, firstSeen: n.firstSeen, early: n.early },
@@ -166,17 +180,50 @@ async () => {
   }
   // modification directe des joueurs sur une réservation faite dès l'ouverture
   for (const m of modified) {
-    const removed = m.before.filter(p => !m.after.map(norm).includes(norm(p)));
+    const removed = minus(m.before, m.after);
     if (!removed.length) continue;
     const key = `mod:${m.id}:${m.after.map(norm).sort().join('|')}`;
     if (state.alertKeys.includes(key)) continue;
     let score = 3; const reasons = ['Joueurs modifiés sur une réservation existante'];
     if (m.early) { score += 2; reasons.push('Réservation faite dès l\'ouverture (J-7)'); }
-    if (removed.some(p => isGuest(p) || isExternal(p))) { score += 2; reasons.push('Invité(s)/externe(s) remplacé(s)'); }
+    const mAdded = minus(m.after, m.before);
+    if (guestToMember(removed, mAdded)) { score += 4; reasons.push('Invité remplacé par un adhérent (créneau réservé à l\'avance sans les vrais noms)'); }
+    else if (removed.some(p => isGuest(p) || isExternal(p))) { score += 2; reasons.push('Invité(s)/externe(s) remplacé(s)'); }
+    const orig = state.active[m.id] || {};
+    for (const b of busyAdded(mAdded, orig, [m.id])) { score += 2; reasons.push(b); }
     state.alertKeys.push(key);
-    alerts.push({ key, score, level: score >= 7 ? 'élevé' : score >= 5 ? 'moyen' : 'faible', reasons, date: m.date, start: m.start, end: m.end,
+    alerts.push({ key, score, level: levelOf(score), reasons, date: m.date, start: m.start, end: m.end,
       before: { id: m.id, court: m.oldCourt, players: m.before, early: m.early }, after: { id: m.id, court: m.court, players: m.after },
-      common: m.after.filter(p => m.before.map(norm).includes(norm(p))), removed, added: m.after.filter(p => !m.before.map(norm).includes(norm(p))), detected: nowIso });
+      common: m.after.filter(p => m.before.map(norm).includes(norm(p))), removed, added: mAdded, detected: nowIso });
+  }
+
+  // ---------- réservations simultanées ----------
+  const upcoming = Object.values(state.active).filter(r => slotStart(r) > now);
+  const byMember = {};
+  for (const r of upcoming) for (const p of members(r)) (byMember[norm(p)] = byMember[norm(p)] || { name: p, list: [] }).list.push(r);
+  for (const { name, list } of Object.values(byMember)) {
+    if (list.length <= MAX_SIMULT) continue;
+    list.sort((a, b) => slotStart(a) - slotStart(b));
+    const key = `quota:${norm(name)}:${list.map(r => r.id).sort().join(',')}`;
+    if (state.alertKeys.includes(key)) continue;
+    state.alertKeys.push(key);
+    const f = list[0];
+    alerts.push({ key, score: 7, level: 'élevé', date: f.date, start: f.start, end: f.end,
+      reasons: [`${name} figure dans ${list.length} réservations à venir (maximum ${MAX_SIMULT})`],
+      before: { id: f.id, court: list.map(r => `${r.date.slice(8, 10)}/${r.date.slice(5, 7)} ${r.start} ${r.court}`).join(' | '), players: [name] },
+      after: { id: '', court: '', players: [] }, common: [name], removed: [], added: [], detected: nowIso });
+  }
+
+  // ---------- import ponctuel d'un historique (ancien bot) ----------
+  let imported = 0;
+  if (opts.import) {
+    const im = opts.import;
+    for (const a of im.alerts || []) if (!state.alertKeys.includes(a.key)) { state.alertKeys.push(a.key); state.alertsLog.push(a); imported++; }
+    const cIds = new Set(state.cancelled.map(c => c.id + c.detected));
+    for (const c of im.cancelled || []) if (!cIds.has(c.id + c.detected)) { state.cancelled.push(c); imported++; }
+    const rAt = new Set(state.runs.map(r => r.at));
+    for (const r of im.runs || []) if (!rAt.has(r.at)) { state.runs.push(r); imported++; }
+    state.runs.sort((a, b) => a.at.localeCompare(b.at));
   }
 
   // ---------- sauvegarde et résumé ----------
@@ -187,7 +234,7 @@ async () => {
   return {
     ok: true, version: VERSION, run: nowIso, previousRun: prevRun, baseline,
     range: [firstDay, lastDay], activeCount: Object.keys(scraped).length,
-    created: created.length, cancelled: cancelled.length, modified: modified.length,
+    created: created.length, cancelled: cancelled.length, modified: modified.length, imported,
     alerts: alerts.map(a => ({ level: a.level, score: a.score, date: a.date, slot: `${a.start}-${a.end}`, before: a.before.players, after: a.after.players, reasons: a.reasons })),
     rows,
     reservations: Object.values(state.active).sort((a, b) => (a.date + a.start + a.court).localeCompare(b.date + b.start + b.court))

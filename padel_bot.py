@@ -208,7 +208,14 @@ def run_once():
             load_cookies(ctx)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             ensure_session(page)
-            res = page.evaluate(script)  # le script vérifie lui-même la session et renvoie l'échec si besoin
+            opts = {"maxSimultaneous": int(os.environ.get("PADEL_MAX_SIMULT", "2"))}
+            imp = HERE / "import-historique.json"
+            if imp.exists():
+                opts["import"] = json.loads(imp.read_text(encoding="utf-8"))
+            res = page.evaluate(script, opts)  # le script vérifie lui-même la session et renvoie l'échec si besoin
+            if res.get("ok") and imp.exists():
+                imp.replace(imp.with_suffix(".importe"))
+                log(f"Historique importé : {res.get('imported', 0)} éléments")
             if res.get("ok"):
                 save_cookies(ctx)        # garde la session à jour pour le passage suivant
         finally:

@@ -6,7 +6,13 @@ Surveille les réservations « Joueur » des pistes de padel dans ADOC (J à J+7
 - les **substitutions** : annulation puis re-réservation du même créneau avec au moins un joueur en commun et des noms différents ;
 - les **modifications de joueurs** sur une réservation existante.
 
-Chaque cas reçoit un niveau (faible / moyen / élevé), plus élevé si la réservation initiale a été faite dès l'ouverture (J-7), contenait des invités, ou si les mêmes noms sont retirés de façon répétée. Le bot **signale**, il ne sanctionne pas : toute décision reste humaine.
+Chaque cas reçoit un niveau (faible / moyen / élevé), plus élevé si la réservation initiale a été faite dès l'ouverture (J-7), contenait des invités, ou si les mêmes noms sont retirés de façon répétée.
+
+Sont classés **élevé** d'office :
+- un **invité remplacé par un adhérent** (créneau pris à l'avance sans les vrais noms) ;
+- un adhérent présent dans **plus de réservations à venir que le maximum autorisé** (`PADEL_MAX_SIMULT`, 2 par défaut, dans `.env`). Le bot ne connaît pas le type d'adhésion de chacun : à vérifier dans ADOC pour les adhérents limités à 1.
+
+Lors d'une substitution, le bot précise aussi si l'adhérent ajouté avait déjà des réservations à venir au moment où le créneau a été pris. Le bot **signale**, il ne sanctionne pas : toute décision reste humaine.
 
 ## Fichiers produits (dossier `PADEL_OUT`)
 
