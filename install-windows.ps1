@@ -1,6 +1,7 @@
 ﻿# Installation du bot padel sur Windows
-# Clic droit > « Exécuter avec PowerShell » (ou : powershell -ExecutionPolicy Bypass -File install-windows.ps1)
-param([int]$Minutes = 10)   # fréquence des passages, ex. : .\install-windows.ps1 -Minutes 30
+# Git Bash : powershell.exe -ExecutionPolicy Bypass -File ./install-windows.ps1 -Minutes 30
+# (ou clic droit > « Exécuter avec PowerShell »)
+param([int]$Minutes = 10)   # fréquence des passages en minutes
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $here
