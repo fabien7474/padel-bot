@@ -114,6 +114,27 @@ def from_result(res, imported=None):
     return out
 
 
+def bootstrap(res):
+    """Premier lancement : reprend dans l'historique les cas et annulations déjà connus du bot (vue glissante)."""
+    sp = lambda x: [p for p in (x or "").split(" · ") if p]
+    out = []
+    for r in res.get("rows") or []:
+        if r["kind"] == "alert":
+            st, _, en = r["slot"].partition("-")
+            out.append({"type": "cas_suspect", "at": r["detected"], "source": "reprise de l'état existant",
+                        "cas": {"key": r["key"], "level": r["level"], "score": r["score"], "date": r["date"], "start": st, "end": en,
+                                "reasons": r["reasons"].split(" ; "), "removed": sp(r["removed"]), "added": sp(r["added"]),
+                                "before": {"court": r["beforeCourt"], "players": sp(r["beforePlayers"])},
+                                "after": {"court": r["afterCourt"], "players": sp(r["afterPlayers"])}}})
+        elif r["kind"] == "cancel":
+            st, _, en = r["slot"].partition("-")
+            out.append({"type": "reservation_annulee", "at": r["detected"], "source": "reprise de l'état existant",
+                        "reservation": {"id": r["id"], "date": r["date"], "start": st, "end": en, "court": r["court"],
+                                        "players": sp(r["players"]), "early": r["early"], "firstSeen": r["firstSeen"],
+                                        "detected": r["detected"], "hoursBeforeSlot": r["hoursBeforeSlot"]}})
+    return out
+
+
 def write_cumulative_csv(root: Path, out: Path, fmt_dt, fmt_day, write_csv):
     """Régénère les CSV cumulés (tout l'historique conservé) à partir des fichiers annuels."""
     evs = read_all(root)

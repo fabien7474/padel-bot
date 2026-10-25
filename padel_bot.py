@@ -205,6 +205,10 @@ def archive(res, imported, prev):
     import history
     root = OUT / "historique"
     evs = history.from_result(res, imported)
+    if res.get("ok") and not any(root.glob("padel-evenements-*.jsonl")):
+        seen = {(e["type"], (e.get("cas") or {}).get("key") or (e.get("reservation") or {}).get("id"), e["at"]) for e in evs}
+        evs += [e for e in history.bootstrap(res)
+                if (e["type"], (e.get("cas") or {}).get("key") or e["reservation"]["id"], e["at"]) not in seen]
     if not res.get("ok") and prev.get("error") == res.get("error"):
         evs = [e for e in evs if e["type"] != "passage_en_echec"]   # un seul événement par période d'échec
     n = history.append(root, evs)
