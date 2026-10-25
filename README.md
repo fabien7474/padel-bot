@@ -17,6 +17,7 @@ Chaque cas reçoit un niveau (faible / moyen / élevé), plus élevé si la rés
 | `padel-passages.csv` | passages du bot | 7 jours |
 | `padel-reservations.csv` / `.json` | liste brute des réservations J à J+7 | état courant |
 | `padel-journal.json` | tout le journal | — |
+| `padel-rapport.html` | rapport lisible (double-clic pour l'ouvrir) | — |
 
 CSV séparés par `;`, UTF-8 avec BOM : ils s'ouvrent directement dans Excel.
 
@@ -46,4 +47,5 @@ Les fichiers contiennent des noms d'adhérents : ne pas les publier, ne pas les 
 ## Structure
 
 - `monitor.js` : lecture d'ADOC et détection (exécuté dans la page ADOC) ;
-- `padel_bot.py` : lancement du navigateur, session, export CSV/JSON, notifications.
+- `padel_bot.py` : lancement du navigateur, session, export CSV/JSON, notifications ;
+- `report.py` : rapport HTML autonome.

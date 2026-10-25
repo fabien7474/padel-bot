@@ -187,6 +187,15 @@ def export(res):
         write_json("padel-reservations.json", {"releve": res.get("run"), "periode": res.get("range"), "reservations": resas})
     write_json("padel-journal.json", {"generated": datetime.now(timezone.utc).isoformat(),
                                       "alerts": alerts, "cancellations": cancels, "runs": runs})
+    from report import build
+    html = build(res, alerts, cancels, runs, resas if res.get("ok") else [], PARIS)
+    tmp = OUT / "padel-rapport.html.tmp"
+    tmp.write_text(html, encoding="utf-8")
+    try:
+        os.replace(tmp, OUT / "padel-rapport.html")
+    except PermissionError:
+        log("padel-rapport.html verrouillé : non mis à jour ce passage")
+        tmp.unlink(missing_ok=True)
 
 
 def run_once():
