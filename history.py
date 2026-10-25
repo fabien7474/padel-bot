@@ -144,8 +144,8 @@ def write_cumulative_csv(root: Path, out: Path, fmt_dt, fmt_day, write_csv):
               ["Détecté le", "Niveau", "Score", "Date du créneau", "Horaire", "Piste avant", "Joueurs avant",
                "Piste après", "Joueurs après", "Retirés", "Ajoutés", "Motifs", "Source", "Empreinte"],
               [[fmt_dt(e["at"]), e["cas"].get("level"), e["cas"].get("score"), fmt_day(e["cas"].get("date")),
-                f'{e["cas"].get("start")}-{e["cas"].get("end")}', e["cas"]["before"].get("court"),
-                " · ".join(e["cas"]["before"].get("players", [])), e["cas"]["after"].get("court"),
+                f'{e["cas"].get("start")}-{e["cas"].get("end")}', (e["cas"]["before"].get("court") or "") + (" (ticket)" if e["cas"]["before"].get("ticket") else ""),
+                " · ".join(e["cas"]["before"].get("players", [])), (e["cas"]["after"].get("court") or "") + (" (ticket)" if e["cas"]["after"].get("ticket") else ""),
                 " · ".join(e["cas"]["after"].get("players", [])), " · ".join(e["cas"].get("removed", [])),
                 " · ".join(e["cas"].get("added", [])), " ; ".join(e["cas"].get("reasons", [])),
                 e.get("source", "bot local"), e["hash"][:12]] for e in reversed(alerts)])

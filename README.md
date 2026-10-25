@@ -5,6 +5,7 @@ Surveille les réservations « Joueur » des pistes de padel dans ADOC (J à J+7
 - les **annulations** : une réservation disparaît avant l'heure du créneau ;
 - les **substitutions** : un créneau est annulé puis re-réservé avec au moins un joueur en commun et des noms différents ;
 - les **modifications de joueurs** sur une réservation existante ;
+- les **changements de mode de réservation** à joueurs identiques : ticket invitation (carnet) remplacé par l'adhésion padel ;
 - les **réservations simultanées** au-delà du maximum autorisé.
 
 Le bot **signale**, il ne sanctionne pas : toute décision reste humaine. L'historique permanent (voir plus bas) sert à justifier les avertissements et sanctions éventuels.
@@ -17,6 +18,8 @@ Chaque cas reçoit un score et un niveau : faible, moyen ou élevé (score ≥ 7
 |---|---|
 | Annulation puis re-réservation du même créneau, ou joueurs modifiés | base 3 |
 | **Invité ou externe remplacé par un adhérent** (créneau pris à l'avance sans les vrais noms) | +4 (élevé d'office) |
+| **Mêmes joueurs, mais réservation initiale avec un ticket invitation (carnet) refaite sur l'adhésion padel** (annulation + re-réservation, ou modification directe) | +4 (élevé d'office) |
+| **Joueur noté externe (`*`, ticket invité) qui réapparaît comme adhérent** | +4 |
 | Réservation initiale faite dès l'ouverture (J-7) | +2 |
 | Invités ou externes dans la réservation initiale | +2 |
 | L'adhérent ajouté avait déjà des réservations à venir quand le créneau a été pris | +2 |
@@ -104,6 +107,8 @@ Le fichier `.env` est propre à chaque machine et n'est jamais envoyé sur GitHu
 | `padel-historique-cas-suspects.csv` | **tous** les cas suspects depuis le début | historique permanent |
 | `padel-historique-annulations.csv` | **toutes** les annulations depuis le début | historique permanent |
 | `historique/padel-evenements-AAAA.jsonl` | journal infalsifiable de chaque événement | `PADEL_HISTORY_YEARS` ans |
+
+Dans les CSV et le rapport, « (ticket) » après la piste indique une réservation faite avec un ticket invitation.
 
 Les CSV utilisent le séparateur `;` et sont encodés en UTF-8 avec BOM : ils s'ouvrent directement dans Excel.
 
