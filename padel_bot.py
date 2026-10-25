@@ -68,8 +68,22 @@ def notify(title, text):
 
 def launch(p, headless):
     PROFILE.mkdir(parents=True, exist_ok=True)
-    return p.chromium.launch_persistent_context(str(PROFILE), channel=os.environ.get("PADEL_CHANNEL", "msedge" if os.name == "nt" else "") or None, headless=headless,
-                                                locale="fr-FR", timezone_id="Europe/Paris")
+    return p.chromium.launch_persistent_context(
+        str(PROFILE), channel=os.environ.get("PADEL_CHANNEL", "msedge" if os.name == "nt" else "") or None,
+        headless=headless, locale="fr-FR", timezone_id="Europe/Paris",
+        ignore_default_args=["--enable-automation"], args=["--disable-blink-features=AutomationControlled"])
+
+
+def browser_exe(p):
+    """Chemin du navigateur à ouvrir « normalement » (sans pilotage) pour la connexion."""
+    if os.environ.get("PADEL_BROWSER"):
+        return os.environ["PADEL_BROWSER"]
+    if os.name == "nt":
+        for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
+            exe = Path(base or "") / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+            if base and exe.exists():
+                return str(exe)
+    return p.chromium.executable_path
 
 
 def load_cookies(ctx):
@@ -208,19 +222,44 @@ def run_once():
 
 
 def login():
+    """Ouvre un navigateur NORMAL (non piloté, donc accepté par la page de connexion FFT),
+    puis, une fois connecté, s'y raccroche juste le temps de copier la session."""
+    import time, urllib.request
     from playwright.sync_api import sync_playwright
-    print("Une fenêtre Edge va s'ouvrir : connectez-vous à ADOC avec le compte du club,")
-    print("puis revenez ici et appuyez sur Entrée.")
+    PROFILE.mkdir(parents=True, exist_ok=True)
+    port = 9333
     with sync_playwright() as p:
-        ctx = launch(p, headless=False)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto(ADOC)
-        input("\nUne fois sur l'accueil ADOC (votre nom en haut à droite), appuyez sur Entrée ici... ")
-        page.goto(HOME_URL, wait_until="domcontentloaded")
-        ok = logged_in(page)
-        if ok:
-            save_cookies(ctx)
-        ctx.close()
+        exe = browser_exe(p)
+    print("Une fenêtre Edge va s'ouvrir : connectez-vous à ADOC avec le compte du club")
+    print("(jusqu'à l'accueil ADOC, votre nom en haut à droite). NE FERMEZ PAS cette fenêtre.")
+    proc = subprocess.Popen([exe, f"--user-data-dir={PROFILE}", f"--remote-debugging-port={port}",
+                             "--no-first-run", "--no-default-browser-check", ADOC])
+    input("\nUne fois connecté, revenez ici et appuyez sur Entrée... ")
+    ok = False
+    for _ in range(10):                      # attend que le port de contrôle réponde
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=2)
+            break
+        except OSError:
+            time.sleep(1)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            ctx = browser.contexts[0]
+            page = ctx.new_page()
+            page.goto(HOME_URL, wait_until="domcontentloaded")
+            ok = logged_in(page)
+            if ok:
+                save_cookies(ctx)
+            page.close()
+            browser.close()
+    except Exception as e:
+        print(f"Impossible de lire la session : {e}")
+    finally:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
     print("Session enregistrée, le bot peut tourner." if ok else
           "Je ne vois pas de session ADOC ouverte : relancez et terminez bien la connexion.")
     log("Connexion manuelle : " + ("OK" if ok else "échec"))
