@@ -32,6 +32,7 @@ HISTORY_YEARS = int(os.environ.get("PADEL_HISTORY_YEARS", "3"))         # conser
 COOKIES = DATA / "session.json"   # cookies de session (hors dossier synchronisé, jamais publiés)
 ADOC = os.environ.get("PADEL_ADOC", "https://adoc.app.fft.fr/adoc/")
 HOME_URL = ADOC + "accueil.do?method=read"
+SUIVI_URL = ADOC + "suiviReservations.do?method=init"   # page qui charge le service de fiches de réservation
 try:
     PARIS = ZoneInfo("Europe/Paris")  # sous Windows, nécessite le paquet tzdata (requirements.txt)
 except Exception:
@@ -81,8 +82,10 @@ def browser_exe(p):
     if os.environ.get("PADEL_BROWSER"):
         return os.environ["PADEL_BROWSER"]
     if os.name == "nt":
-        for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
-            exe = Path(base or "") / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+        chrome = os.environ.get("PADEL_CHANNEL", "").startswith("chrome")
+        rel = Path("Google", "Chrome", "Application", "chrome.exe") if chrome else Path("Microsoft", "Edge", "Application", "msedge.exe")
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), os.environ.get("LOCALAPPDATA")):
+            exe = Path(base or "") / rel
             if base and exe.exists():
                 return str(exe)
     return p.chromium.executable_path
@@ -238,8 +241,13 @@ def run_once():
         try:
             load_cookies(ctx)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            ensure_session(page)
-            opts = {"maxSimultaneous": int(os.environ.get("PADEL_MAX_SIMULT", "2"))}
+            if ensure_session(page):
+                try:
+                    page.goto(SUIVI_URL, wait_until="load")
+                except Exception as e:
+                    log(f"Page de suivi inaccessible ({e}) : passage sans fiches détaillées")
+            opts = {"maxSimultaneous": int(os.environ.get("PADEL_MAX_SIMULT", "2")),
+                    "maxDetails": int(os.environ.get("PADEL_MAX_DETAILS", "60"))}
             imp = HERE / "import-historique.json"
             if imp.exists():
                 opts["import"] = json.loads(imp.read_text(encoding="utf-8"))
@@ -256,7 +264,8 @@ def run_once():
     archive(res, imported, prev)
     if res.get("ok"):
         log(f"OK : {res['activeCount']} réservations suivies, {res['created']} nouvelles, "
-            f"{res['cancelled']} annulées, {len(res['alerts'])} cas suspects")
+            f"{res['cancelled']} annulées, {len(res['alerts'])} cas suspects, {res.get('detailsRead', 0)} fiches lues"
+            + ("" if res.get("dwr") else " (fiches indisponibles)"))
         for a in res["alerts"]:
             notify(f"Bot padel : cas {a['level']}",
                    f"{day(a['date'])} {a['slot']} : {' · '.join(a['before'])} → {' · '.join(a['after'])}")

@@ -26,6 +26,18 @@ Chaque cas reçoit un score et un niveau : faible, moyen ou élevé (score ≥ 7
 | Nouvelle réservation faite après l'ouverture | +1 |
 | Même adhérent retiré à plusieurs reprises | +1 |
 
+### Fiche détaillée des réservations
+
+Pour chaque nouvelle réservation, et après chaque modification, le bot lit la **fiche ADOC** de la réservation, en lecture seule. Elle indique, pour chaque joueur, **l'adhésion utilisée** (son numéro), s'il est **invité** et s'il a consommé un **ticket payant**. Cette fiche est conservée avec la réservation dans l'historique. Lors d'une annulation suivie d'une re-réservation, ou d'une modification, le bot compare les fiches :
+
+| Constat sur les fiches | Points |
+|---|---|
+| Joueur invité avec ticket payant dans la réservation initiale, inscrit comme adhérent ensuite | +4 |
+| Adhésion utilisée changée pour un même adhérent, par exemple carnet de tickets → adhésion padel | +3 |
+| Moins de tickets payants qu'au départ | +2 |
+
+Si la fiche n'est pas disponible, le bot se rabat sur l'indicateur « ticket » de la liste et sur les marqueurs `*`.
+
 Un adhérent présent dans **plus de `PADEL_MAX_SIMULT` réservations à venir** (2 par défaut) déclenche aussi un cas élevé. Le bot ne connaît pas le type d'adhésion de chacun : pour un adhérent limité à 1 réservation, il faut vérifier dans ADOC.
 
 ## Installation (Windows, Git Bash)
@@ -91,6 +103,8 @@ cp .env.example .env
 | `PADEL_OUT` | dossier des résultats (par exemple un dossier Google Drive) | `resultats/` dans le projet |
 | `PADEL_MAX_SIMULT` | réservations à venir simultanées autorisées par adhérent | `2` |
 | `PADEL_HISTORY_YEARS` | conservation de l'historique permanent, en années | `3` |
+| `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
+| `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |
 
 Le fichier `.env` est propre à chaque machine et n'est jamais envoyé sur GitHub.
 

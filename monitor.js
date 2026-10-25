@@ -5,7 +5,8 @@ async (opts = {}) => {
   const EARLY_LEAD_DAYS = 6.5;     // vue pour la 1re fois à ≥ 6,5 j du créneau = réservée dès l'ouverture
   const MATCH_WINDOW_H = 4;        // écart max entre annulation et nouvelle réservation
   const KEEP_CANCELLED_DAYS = 14;
-  const MAX_SIMULT = Number(opts.maxSimultaneous) || 2;   // réservations à venir simultanées autorisées par adhérent
+  const MAX_SIMULT = Number(opts.maxSimultaneous) || 2;
+  const MAX_DETAILS = Number(opts.maxDetails) || 60;   // fiches de réservation lues par passage (détail par joueur)   // réservations à venir simultanées autorisées par adhérent
   const now = new Date();
   const nowIso = now.toISOString();
 
@@ -22,12 +23,41 @@ async (opts = {}) => {
   const hoursBetween = (a, b) => Math.abs(new Date(a) - new Date(b)) / 36e5;
   // différence « multi-ensemble » : 3 invités → 2 invités = 1 invité retiré
   const minus = (a, b) => { const left = b.map(norm); return a.filter(p => { const i = left.indexOf(norm(p)); if (i < 0) return true; left.splice(i, 1); return false; }); };
+  // Fiche détaillée d'une réservation (par joueur : adhésion utilisée, invité, ticket payant), via le service ADOC
+  const hasDwr = typeof ReservationTableauxService !== 'undefined';
+  const getDetail = id => !hasDwr ? Promise.resolve(null) : new Promise(res => {
+    const t = setTimeout(() => res(null), 10000);
+    try {
+      ReservationTableauxService.getReservation(String(id), null, null, {
+        callback: r => { clearTimeout(t); res(((r && r.reservation && r.reservation.joueurs) || []).map(j => ({
+          nom: j.nom || '', idMembre: j.idMembre ?? null, idAdhesion: j.idAdhesion ?? null, invite: j.invite === true, ticketPayant: j.ticketPayant === true }))); },
+        errorHandler: () => { clearTimeout(t); res(null); } });
+    } catch (e) { clearTimeout(t); res(null); }
+  });
+  const nn = s => norm(s).split(' ').sort().join(' ');   // « Cyril BONNET » = « BONNET Cyril »
+  const detailChanges = (a, b) => {
+    if (!a || !b) return null;
+    const out = [];
+    for (const pb of b) {
+      if (pb.invite) continue;
+      const pa = a.find(x => (x.idMembre && x.idMembre === pb.idMembre) || (x.nom && nn(x.nom) === nn(pb.nom)));
+      if (!pa) continue;
+      if (pa.invite) out.push({ w: 4, t: `${pb.nom} : invité avec ticket payant dans la réservation initiale, inscrit comme adhérent ensuite` });
+      else if (pa.idAdhesion && pb.idAdhesion && pa.idAdhesion !== pb.idAdhesion)
+        out.push({ w: 3, t: `${pb.nom} : adhésion utilisée changée (n° ${pa.idAdhesion} → n° ${pb.idAdhesion})` });
+    }
+    const ta = a.filter(x => x.ticketPayant).length, tb = b.filter(x => x.ticketPayant).length;
+    if (tb < ta) out.push({ w: 2, t: `Tickets payants : ${ta} → ${tb}` });
+    return out;
+  };
   // Changement du mode de réservation à joueurs identiques : ticket invitation (carnet) ↔ adhésion padel
   const rawSig = ps => ps.map(p => p.trim().toLowerCase()).sort().join('|');
   const modeChanges = (a, b) => {
     const out = [];
     if (a.ticket && !b.ticket) out.push({ w: 4, t: 'Réservation initiale faite avec un ticket invitation (carnet), refaite sur l\'adhésion padel' });
     else if (!a.ticket && b.ticket) out.push({ w: 1, t: 'Réservation refaite avec un ticket invitation' });
+    const det = detailChanges(a.detail, b.detail);
+    if (det) return out.concat(det);   // détail ADOC disponible : plus précis que les marqueurs « * »
     const extA = new Set(a.players.filter(p => isExternal(p) || isGuest(p)).map(norm));
     for (const p of b.players) if (!isExternal(p) && !isGuest(p) && extA.has(norm(p)))
       out.push({ w: 4, t: `${p} figurait comme externe (ticket invité) et apparaît maintenant comme adhérent` });
@@ -134,10 +164,23 @@ async (opts = {}) => {
       const before = old.players.map(norm).sort().join('|'), after = r.players.map(norm).sort().join('|');
       if (before !== after || old.court !== r.court || old.start !== r.start || rawSig(old.players) !== rawSig(r.players) || !!old.ticket !== !!r.ticket) {
         modified.push({ id: r.id, date: r.date, start: r.start, end: r.end, court: r.court, oldCourt: old.court, before: old.players, after: r.players,
-          oldTicket: !!old.ticket, ticket: !!r.ticket, early: old.early, detected: nowIso });
+          oldTicket: !!old.ticket, ticket: !!r.ticket, early: old.early, detected: nowIso, beforeDetail: old.detail || null });
+        old.detail = null;   // fiche à relire
       }
       Object.assign(old, r, { lastSeen: nowIso });
     }
+  }
+
+  // fiches détaillées : nouvelles réservations et réservations modifiées
+  let detailsRead = 0;
+  if (hasDwr) {
+    const todo = Object.values(state.active).filter(r => !r.detail && slotEnd(r) > now)
+      .sort((a, b) => (b.baseline ? 0 : 1) - (a.baseline ? 0 : 1));   // les nouvelles d'abord
+    for (const r of todo.slice(0, MAX_DETAILS)) {
+      const d = await getDetail(r.id);
+      if (d) { r.detail = d; detailsRead++; }
+    }
+    for (const m of modified) m.afterDetail = (state.active[m.id] || {}).detail || null;
   }
 
   // annulations (disparues avant l'heure du créneau) et créneaux joués
@@ -188,8 +231,8 @@ async (opts = {}) => {
       alerts.push({
         key, score, level: levelOf(score), reasons,
         date: c.date, start: c.start, end: c.end,
-        before: { id: c.id, court: c.court, players: c.players, firstSeen: c.firstSeen, early: c.early, ticket: !!c.ticket, cancelledBetween: [c.cancelledAfter, c.detected] },
-        after: { id: n.id, court: n.court, players: n.players, firstSeen: n.firstSeen, early: n.early, ticket: !!n.ticket },
+        before: { id: c.id, court: c.court, players: c.players, firstSeen: c.firstSeen, early: c.early, ticket: !!c.ticket, detail: c.detail || null, cancelledBetween: [c.cancelledAfter, c.detected] },
+        after: { id: n.id, court: n.court, players: n.players, firstSeen: n.firstSeen, early: n.early, ticket: !!n.ticket, detail: n.detail || null },
         common: c.players.filter(p => common.includes(norm(p))), removed, added, detected: nowIso
       });
     }
@@ -197,7 +240,7 @@ async (opts = {}) => {
   // modification directe des joueurs sur une réservation faite dès l'ouverture
   for (const m of modified) {
     const removed = minus(m.before, m.after);
-    const modes = modeChanges({ players: m.before, ticket: m.oldTicket }, { players: m.after, ticket: m.ticket });
+    const modes = modeChanges({ players: m.before, ticket: m.oldTicket, detail: m.beforeDetail }, { players: m.after, ticket: m.ticket, detail: m.afterDetail });
     if (!removed.length && !modes.length) continue;
     const key = `mod:${m.id}:${rawSig(m.after)}:${m.ticket ? 'T' : 'A'}`;
     if (state.alertKeys.includes(key)) continue;
@@ -211,7 +254,7 @@ async (opts = {}) => {
     for (const b of busyAdded(mAdded, orig, [m.id])) { score += 2; reasons.push(b); }
     state.alertKeys.push(key);
     alerts.push({ key, score, level: levelOf(score), reasons, date: m.date, start: m.start, end: m.end,
-      before: { id: m.id, court: m.oldCourt, players: m.before, early: m.early, ticket: m.oldTicket }, after: { id: m.id, court: m.court, players: m.after, ticket: m.ticket },
+      before: { id: m.id, court: m.oldCourt, players: m.before, early: m.early, ticket: m.oldTicket, detail: m.beforeDetail }, after: { id: m.id, court: m.court, players: m.after, ticket: m.ticket, detail: m.afterDetail },
       common: m.after.filter(p => m.before.map(norm).includes(norm(p))), removed, added: mAdded, detected: nowIso });
   }
 
@@ -252,13 +295,13 @@ async (opts = {}) => {
   return {
     ok: true, version: VERSION, run: nowIso, previousRun: prevRun, baseline,
     range: [firstDay, lastDay], activeCount: Object.keys(scraped).length,
-    created: created.length, cancelled: cancelled.length, modified: modified.length, imported,
+    created: created.length, cancelled: cancelled.length, modified: modified.length, imported, detailsRead, dwr: hasDwr,
     alerts: alerts.map(a => ({ level: a.level, score: a.score, date: a.date, slot: `${a.start}-${a.end}`, before: a.before.players, after: a.after.players, reasons: a.reasons })),
     rows,
     // détail des événements de ce passage, pour l'historique permanent (côté Python)
     events: {
-      created: created.map(r => ({ id: r.id, date: r.date, start: r.start, end: r.end, court: r.court, players: r.players, ticket: !!r.ticket, early: !!r.early, firstSeen: r.firstSeen, leadDays: r.leadDays })),
-      cancelled: cancelled.map(c => ({ id: c.id, date: c.date, start: c.start, end: c.end, court: c.court, players: c.players, early: !!c.early, firstSeen: c.firstSeen, lastSeen: c.cancelledAfter, detected: c.detected, hoursBeforeSlot: c.hoursBeforeSlot })),
+      created: created.map(r => ({ id: r.id, date: r.date, start: r.start, end: r.end, court: r.court, players: r.players, ticket: !!r.ticket, early: !!r.early, firstSeen: r.firstSeen, leadDays: r.leadDays, detail: r.detail || null })),
+      cancelled: cancelled.map(c => ({ id: c.id, date: c.date, start: c.start, end: c.end, court: c.court, players: c.players, early: !!c.early, firstSeen: c.firstSeen, lastSeen: c.cancelledAfter, detected: c.detected, hoursBeforeSlot: c.hoursBeforeSlot, ticket: !!c.ticket, detail: c.detail || null })),
       modified,
       alerts
     },
