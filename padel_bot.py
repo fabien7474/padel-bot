@@ -70,8 +70,24 @@ def notify(title, text):
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def close_profile_browsers():
+    """Ferme les navigateurs restés ouverts sur le profil du bot (sinon le lancement suivant échoue).
+    Ne touche pas aux autres fenêtres Edge/Chrome de l'utilisateur."""
+    try:
+        if os.name == "nt":
+            ps = ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*" + str(PROFILE).replace("'", "''")
+                  + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            subprocess.run(["pkill", "-f", f"--user-data-dir={PROFILE}"], capture_output=True, timeout=30)
+    except Exception as e:
+        log(f"Impossible de fermer les navigateurs du profil : {e}")
+
+
 def launch(p, headless):
     PROFILE.mkdir(parents=True, exist_ok=True)
+    close_profile_browsers()
     return p.chromium.launch_persistent_context(
         str(PROFILE), channel=os.environ.get("PADEL_CHANNEL", "msedge" if os.name == "nt" else "") or None,
         headless=headless, locale="fr-FR", timezone_id="Europe/Paris",
@@ -334,6 +350,7 @@ def login():
         exe = browser_exe(p)
     print("Une fenêtre Edge va s'ouvrir : connectez-vous à ADOC avec le compte du club")
     print("(jusqu'à l'accueil ADOC, votre nom en haut à droite). NE FERMEZ PAS cette fenêtre.")
+    close_profile_browsers()
     proc = subprocess.Popen([exe, f"--user-data-dir={PROFILE}", f"--remote-debugging-port={port}",
                              "--no-first-run", "--no-default-browser-check", ADOC])
     input("\nUne fois connecté, revenez ici et appuyez sur Entrée... ")
@@ -362,6 +379,7 @@ def login():
             proc.terminate()
         except Exception:
             pass
+        close_profile_browsers()   # Edge garde parfois des processus en arrière-plan
     print("Session enregistrée, le bot peut tourner." if ok else
           "Je ne vois pas de session ADOC ouverte : relancez et terminez bien la connexion.")
     log("Connexion manuelle : " + ("OK" if ok else "échec"))
