@@ -247,6 +247,36 @@ def in_pause(now=None):
     return a <= t < b if a <= b else (t >= a or t < b)   # gère une pause à cheval sur minuit (ex. 23:00-06:00)
 
 
+def keepalive():
+    """Pendant la pause nocturne : visite légère d'ADOC pour garder la session (FFT + ADOC) active.
+    Ne lit aucune réservation et n'écrit aucun résultat. Au plus une visite toutes les 25 minutes."""
+    from playwright.sync_api import sync_playwright
+    mark = DATA / "keepalive.txt"
+    try:
+        if mark.exists() and (datetime.now().timestamp() - mark.stat().st_mtime) < 25 * 60:
+            return 0
+    except OSError:
+        pass
+    with sync_playwright() as p:
+        ctx = launch(p, headless=True)
+        try:
+            load_cookies(ctx)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            ok = ensure_session(page)
+            if ok:
+                save_cookies(ctx)
+        finally:
+            ctx.close()
+    DATA.mkdir(parents=True, exist_ok=True)
+    mark.write_text(datetime.now().isoformat(), encoding="utf-8")
+    prev = json.loads(STATUS.read_text(encoding="utf-8")) if STATUS.exists() else {}
+    if not ok and prev.get("error") != "SESSION":
+        log("Pause nocturne : session ADOC perdue (reconnexion nécessaire)")
+        notify("Bot padel : session ADOC expirée", "Lancez connexion-adoc.cmd et reconnectez-vous à ADOC.")
+        STATUS.write_text(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "ok": False, "error": "SESSION"}), encoding="utf-8")
+    return 0 if ok else 2
+
+
 def run_once():
     from playwright.sync_api import sync_playwright
     script = (HERE / "monitor.js").read_text(encoding="utf-8")
@@ -344,7 +374,9 @@ if __name__ == "__main__":
         elif "--verifier" in sys.argv:
             sys.exit(verify_history())
         elif in_pause() and "--forcer" not in sys.argv:
-            sys.exit(0)   # pause nocturne : aucun accès à ADOC, rien d'écrit
+            # pause nocturne : pas de relevé, seulement une visite légère pour ne pas perdre la session
+            keep = os.environ.get("PADEL_PAUSE_KEEPALIVE", "oui").strip().lower() not in ("non", "no", "0", "off")
+            sys.exit(keepalive() if keep else 0)
         else:
             sys.exit(run_once())
     except SystemExit:

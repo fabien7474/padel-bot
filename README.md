@@ -87,7 +87,7 @@ Le bot ne stocke **aucun mot de passe**.
 
 Une fréquence de 15 à 30 minutes maintient les sessions actives plus longtemps.
 
-**Pause nocturne** : de minuit à 7h (réglable avec `PADEL_PAUSE`), la tâche se lance mais s'arrête aussitôt, sans contacter ADOC. Les changements faits pendant la nuit sont détectés au premier passage du matin. Une annulation de nuit est alors datée entre le dernier passage de la veille et celui du matin.
+**Pause nocturne** : de minuit à 7h (réglable avec `PADEL_PAUSE`), le bot ne relève pas les réservations. Il fait seulement une **visite légère d'ADOC toutes les 30 minutes environ** pour que la session ne s'éteigne pas, faute de quoi la connexion FFT expirerait pendant la nuit et il faudrait refaire le captcha chaque matin. Cette visite se désactive avec `PADEL_PAUSE_KEEPALIVE=non`. Les changements faits pendant la nuit sont détectés au premier passage du matin. Une annulation de nuit est alors datée entre le dernier passage de la veille et celui du matin.
 
 ## Configuration
 
@@ -102,6 +102,7 @@ cp .env.example .env
 | `PADEL_OUT` | dossier des résultats (par exemple un dossier Google Drive) | `resultats/` dans le projet |
 | `PADEL_HISTORY_YEARS` | conservation de l'historique permanent, en années | `3` |
 | `PADEL_PAUSE` | pause nocturne, sans aucun passage (`HH:MM-HH:MM`, peut chevaucher minuit ; `non` pour désactiver) | `00:00-07:00` |
+| `PADEL_PAUSE_KEEPALIVE` | visite légère d'ADOC pendant la pause pour garder la session | `oui` |
 | `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
 | `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |
 
