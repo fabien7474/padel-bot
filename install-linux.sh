@@ -18,6 +18,9 @@ sudo .venv/bin/playwright install-deps chromium >/dev/null
 .venv/bin/playwright install chromium >/dev/null
 
 echo "3/4 Configuration..."
+touch .env
+if grep -qE '^\s*PADEL_INTERVALLE=' .env; then sed -i "s/^\s*PADEL_INTERVALLE=.*/PADEL_INTERVALLE=$MINUTES/" .env
+else echo "PADEL_INTERVALLE=$MINUTES" >> .env; fi
 if [ -f .env ]; then grep -E '^\s*PADEL_' .env | sed 's/^/   /' || true
 else echo "   Résultats dans : $HERE/resultats (modifiable via .env, voir .env.example)"; fi
 
@@ -34,4 +37,5 @@ else
   echo "   cd $HERE && .venv/bin/python padel_bot.py --login"
   echo "ou à copier la session depuis le portable (voir README)."
 fi
+echo; echo "Rapport consultable depuis le portable et le téléphone (via Tailscale) : ./publier-rapport.sh"
 echo; echo "Terminé. Test manuel : .venv/bin/python padel_bot.py --forcer ; echo \$?"

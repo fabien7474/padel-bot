@@ -105,6 +105,7 @@ cp .env.example .env
 | `PADEL_PAUSE_KEEPALIVE` | visite légère d'ADOC pendant la pause pour garder la session | `oui` |
 | `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
 | `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |
+| `PADEL_INTERVALLE` | minutes entre deux passages, pour afficher le prochain passage et détecter un bot arrêté (écrit par `install-linux.sh`) | `30` |
 
 Le fichier `.env` est propre à chaque machine et n'est jamais envoyé sur GitHub.
 
@@ -112,7 +113,9 @@ Le fichier `.env` est propre à chaque machine et n'est jamais envoyé sur GitHu
 
 | Fichier | Contenu | Conservation |
 |---|---|---|
-| `padel-rapport.html` | **rapport lisible** : état, chiffres clés, cas suspects, annulations, réservations, passages | réécrit à chaque passage |
+| `padel-rapport.html` | **rapport lisible** : état du bot, chiffres clés, cas suspects, annulations, réservations, passages | réécrit à chaque passage |
+| `padel-statut.json` | état du bot (dernier passage, prochain passage, session, cas suspects, historique), **sans aucun nom** | réécrit à chaque passage |
+| `index.html` | renvoie vers le rapport (page d'accueil quand le dossier est servi en web) | créé une fois |
 | `padel-cas-suspects.csv` | cas suspects récents | 90 jours |
 | `padel-annulations.csv` | annulations récentes | 14 jours |
 | `padel-passages.csv` | passages du bot | 7 jours |
@@ -167,6 +170,23 @@ scp /c/Users/<moi>/AppData/Local/padel-bot/session.json  utilisateur@serveur:~/.
 
 Arrêter le bot de l'ancienne machine **avant** la copie : sinon deux historiques divergent. La mémoire de travail du bot (les réservations en cours) repart de zéro, et les comparaisons reprennent dès le deuxième passage.
 
+### Consulter le rapport depuis le portable ou le téléphone
+
+Sur le serveur, une seule fois :
+
+```bash
+cd ~/padel-bot && ./publier-rapport.sh
+```
+
+Le dossier des résultats est alors servi par Tailscale, **uniquement aux appareils de votre réseau Tailscale** : rien n'est publié sur Internet, et le trafic est chiffré par Tailscale. Ça survit aux redémarrages ; `./publier-rapport.sh arret` le désactive.
+
+- Portable ou téléphone : installer l'application Tailscale, se connecter avec le même compte, puis ouvrir `http://fab-beelink/` (le nom de la machine dans Tailscale). Sur le téléphone, « Ajouter à l'écran d'accueil ».
+- La page se recharge toutes les 5 minutes. Le bloc **État du bot** donne : actif, en pause nocturne ou arrêté, dernier passage, dernier passage réussi, prochain passage, nombre de cas suspects, fiches lues, intégrité de l'historique et version.
+- Si aucun passage n'a eu lieu à l'heure prévue (Beelink éteint, cron arrêté), la page affiche en rouge « Le bot ne tourne plus », même si elle est vieille.
+- Les CSV restent téléchargeables depuis la même adresse (`http://fab-beelink/padel-historique-cas-suspects.csv`, etc.).
+
+Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni styles ni script), et les noms des adhérents seraient stockés chez un tiers. Dropbox reste une bonne cible pour la **sauvegarde** de l'historique.
+
 ## Structure
 
 | Fichier | Rôle |
@@ -177,5 +197,6 @@ Arrêter le bot de l'ancienne machine **avant** la copie : sinon deux historique
 | `history.py` | historique permanent chaîné |
 | `install-windows.ps1` | installation et tâche planifiée Windows |
 | `install-linux.sh` | installation et tâche cron Linux |
+| `publier-rapport.sh` | rapport consultable à distance via Tailscale |
 | `connexion-adoc.cmd`, `test-passage.cmd`, `mettre-a-jour.cmd` | raccourcis double-clic |
 | `.env.example` | modèle de configuration |

@@ -12,7 +12,7 @@ Fonctionne à l'identique sous Windows (navigateur Edge) et Linux (Chromium de P
 Réglages par variables d'environnement (fichier .env à côté du script) : PADEL_OUT = dossier des résultats.
 """
 import csv, json, os, subprocess, sys, traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -30,6 +30,7 @@ PROFILE = DATA / "profil"
 LOG = HERE / "bot.log"                                                    # journal technique (sans noms)
 STATUS = DATA / "statut.json"
 HISTORY_YEARS = int(os.environ.get("PADEL_HISTORY_YEARS", "3"))         # conservation de l'historique permanent
+INTERVAL = int(os.environ.get("PADEL_INTERVALLE", "30"))                  # minutes entre deux passages (cron / Planificateur)
 COOKIES = DATA / "session.json"   # cookies de session (hors dossier synchronisé, jamais publiés)
 ADOC = os.environ.get("PADEL_ADOC", "https://adoc.app.fft.fr/adoc/")
 HOME_URL = ADOC + "accueil.do?method=read"
@@ -176,7 +177,7 @@ def write_json(name, obj):
         tmp.unlink(missing_ok=True)
 
 
-def export(res):
+def export(res, status=None):
     OUT.mkdir(parents=True, exist_ok=True)
     rows = res.get("rows") or []
     is_g = lambda p: p.strip().lower().startswith("invit") or p.strip().endswith("*")
@@ -210,7 +211,14 @@ def export(res):
     write_json("padel-journal.json", {"generated": datetime.now(timezone.utc).isoformat(),
                                       "alerts": alerts, "cancellations": cancels, "runs": runs})
     from report import build
-    html = build(res, alerts, cancels, runs, resas if res.get("ok") else [], PARIS)
+    html = build(res, alerts, cancels, runs, resas if res.get("ok") else [], PARIS, status)
+    idx = OUT / "index.html"   # page d'accueil quand le dossier est servi en web (publier-rapport.sh)
+    if not idx.exists():
+        idx.write_text('<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=padel-rapport.html">'
+                       '<a href="padel-rapport.html">Rapport padel</a>', encoding="utf-8")
+    if status:
+        write_json("padel-statut.json", {**status, "alerts7d": sum(1 for a in alerts if _days_ago(a["detected"]) < 7),
+                                         "alerts90d": len(alerts)})
     tmp = OUT / "padel-rapport.html.tmp"
     tmp.write_text(html, encoding="utf-8")
     try:
@@ -220,9 +228,14 @@ def export(res):
         tmp.unlink(missing_ok=True)
 
 
+def _days_ago(iso):
+    return (datetime.now(timezone.utc) - datetime.fromisoformat(iso.replace("Z", "+00:00"))).total_seconds() / 86400
+
+
 def archive(res, imported, prev):
     """Historique permanent, chaîné et jamais réécrit (voir history.py)."""
     import history
+    OUT.mkdir(parents=True, exist_ok=True)
     root = OUT / "historique"
     evs = history.from_result(res, imported)
     if res.get("ok") and not any(root.glob("padel-evenements-*.jsonl")):
@@ -249,18 +262,57 @@ def verify_history():
     return 0 if all(r[2] for r in res) else 3
 
 
-def in_pause(now=None):
-    """Pause nocturne (PADEL_PAUSE, par défaut 00:00-07:00, heure locale). Vide ou « non » = pas de pause."""
+def pause_bounds():
+    """(début, fin) de la pause nocturne PADEL_PAUSE (par défaut 00:00-07:00), ou None si pas de pause."""
     spec = os.environ.get("PADEL_PAUSE", "00:00-07:00").strip()
     if not spec or spec.lower() in ("non", "aucune", "off"):
-        return False
+        return None
     try:
         a, b = [datetime.strptime(x.strip(), "%H:%M").time() for x in spec.split("-")]
+        return a, b
     except ValueError:
         log(f"PADEL_PAUSE invalide ({spec}) : format attendu HH:MM-HH:MM")
+        return None
+
+
+def in_pause(now=None):
+    """Pause nocturne (PADEL_PAUSE, par défaut 00:00-07:00, heure locale). Vide ou « non » = pas de pause."""
+    pb = pause_bounds()
+    if not pb:
         return False
+    a, b = pb
     t = (now or (datetime.now(PARIS) if PARIS else datetime.now())).time()
     return a <= t < b if a <= b else (t >= a or t < b)   # gère une pause à cheval sur minuit (ex. 23:00-06:00)
+
+
+def bot_status(res, prev):
+    """État du bot affiché en tête du rapport et écrit dans padel-statut.json (aucun nom d'adhérent)."""
+    import history
+    now = datetime.now(PARIS) if PARIS else datetime.now().astimezone()
+    nxt = now + timedelta(minutes=INTERVAL)
+    pb = pause_bounds()
+    if pb and in_pause(nxt):        # prochain passage repoussé à la fin de la pause nocturne
+        end = nxt.replace(hour=pb[1].hour, minute=pb[1].minute, second=0, microsecond=0)
+        nxt = end if end >= nxt else end + timedelta(days=1)
+    chk = history.verify(OUT / "historique")
+    try:
+        ver = subprocess.run(["git", "-C", str(HERE), "log", "-1", "--format=%h %cd", "--date=format:%d/%m/%Y"],
+                             capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:
+        ver = ""
+    ok = bool(res.get("ok"))
+    return {"generated": now.astimezone(timezone.utc).isoformat(),
+            "state": "actif" if ok else ("session" if res.get("error") == "SESSION" else "echec"),
+            "error": None if ok else res.get("error"), "message": None if ok else res.get("message"),
+            "lastRun": now.astimezone(timezone.utc).isoformat(),
+            "lastOk": now.astimezone(timezone.utc).isoformat() if ok else prev.get("last_ok"),
+            "nextRun": nxt.astimezone(timezone.utc).isoformat(),
+            # au-delà de cette heure sans nouveau passage, la page signale que le bot semble arrêté
+            "staleAfter": (nxt + timedelta(minutes=INTERVAL + 15)).astimezone(timezone.utc).isoformat(),
+            "intervalMin": INTERVAL, "pause": os.environ.get("PADEL_PAUSE", "00:00-07:00").strip(),
+            "host": os.uname().nodename if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", ""),
+            "historyEvents": sum(n for _, n, _, _ in chk), "historyIntact": all(o for _, _, o, _ in chk),
+            "details": res.get("detailsRead"), "dwr": res.get("dwr"), "version": ver}
 
 
 def keepalive():
@@ -289,7 +341,7 @@ def keepalive():
     if not ok and prev.get("error") != "SESSION":
         log("Pause nocturne : session ADOC perdue (reconnexion nécessaire)")
         notify("Bot padel : session ADOC expirée", "Lancez connexion-adoc.cmd et reconnectez-vous à ADOC.")
-        STATUS.write_text(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "ok": False, "error": "SESSION"}), encoding="utf-8")
+        STATUS.write_text(json.dumps({**prev, "at": datetime.now(timezone.utc).isoformat(), "ok": False, "error": "SESSION"}), encoding="utf-8")
     return 0 if ok else 2
 
 
@@ -336,8 +388,8 @@ def run_once():
                 save_cookies(ctx)        # garde la session à jour pour le passage suivant
         finally:
             ctx.close()
-    export(res)
     archive(res, imported, prev)
+    export(res, bot_status(res, prev))
     if res.get("ok"):
         log(f"OK : {res['activeCount']} réservations suivies, {res['created']} nouvelles, "
             f"{res['cancelled']} annulées, {len(res['alerts'])} cas suspects, {res.get('detailsRead', 0)} fiches lues"
@@ -350,8 +402,9 @@ def run_once():
         if res.get("error") == "SESSION" and prev.get("error") != "SESSION":
             notify("Bot padel : session ADOC expirée",
                    "Lancez « python padel_bot.py --login » et reconnectez-vous à ADOC.")
-    STATUS.write_text(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "ok": res.get("ok"),
-                                  "error": res.get("error")}), encoding="utf-8")
+    now = datetime.now(timezone.utc).isoformat()
+    STATUS.write_text(json.dumps({"at": now, "ok": res.get("ok"), "error": res.get("error"),
+                                  "last_ok": now if res.get("ok") else prev.get("last_ok")}), encoding="utf-8")
     return 0 if res.get("ok") else 2   # 0x2 dans le Planificateur = session à reconnecter
 
 
