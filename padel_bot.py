@@ -293,6 +293,21 @@ def keepalive():
     return 0 if ok else 2
 
 
+def history_seed():
+    """Cas suspects (90 j) et annulations (14 j) de l'historique permanent, pour recharger une mémoire de travail vierge."""
+    try:
+        import history
+        now = datetime.now(timezone.utc)
+        recent = lambda iso, days: (now - datetime.fromisoformat(iso.replace("Z", "+00:00"))).days < days
+        evs = history.read_all(OUT / "historique")
+        fix = lambda d, at: {**d, "detected": d.get("detected") or at}
+        return {"alerts": [fix(e["cas"], e["at"]) for e in evs if e["type"] == "cas_suspect" and recent(e["at"], 90)],
+                "cancelled": [fix(e["reservation"], e["at"]) for e in evs if e["type"] == "reservation_annulee" and recent(e["at"], 14)]}
+    except Exception as e:
+        log(f"Historique illisible pour la reprise : {e}")
+        return {}
+
+
 def run_once():
     from playwright.sync_api import sync_playwright
     script = (HERE / "monitor.js").read_text(encoding="utf-8")
@@ -308,6 +323,7 @@ def run_once():
                 except Exception as e:
                     log(f"Page de suivi inaccessible ({e}) : passage sans fiches détaillées")
             opts = {"maxDetails": int(os.environ.get("PADEL_MAX_DETAILS", "60"))}
+            opts["seed"] = history_seed()
             imp = HERE / "import-historique.json"
             if imp.exists():
                 opts["import"] = json.loads(imp.read_text(encoding="utf-8"))

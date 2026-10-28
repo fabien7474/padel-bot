@@ -257,6 +257,15 @@ async (opts = {}) => {
       common: m.after.filter(p => m.before.map(norm).includes(norm(p))), removed, added: mAdded, detected: nowIso });
   }
 
+  // ---------- mémoire de travail vierge (nouvelle machine, profil effacé) : recharge depuis l'historique permanent ----------
+  if (opts.seed && !state.seeded) {
+    const keys = new Set(state.alertKeys);
+    for (const a of opts.seed.alerts || []) if (a && a.key && !keys.has(a.key)) { keys.add(a.key); state.alertKeys.push(a.key); state.alertsLog.push(a); }
+    const cIds = new Set(state.cancelled.map(c => c.id + c.detected));
+    for (const c of opts.seed.cancelled || []) if (c && !cIds.has(c.id + c.detected)) state.cancelled.push(c);
+    state.seeded = nowIso;
+  }
+
   // ---------- import ponctuel d'un historique (ancien bot) ----------
   let imported = 0;
   if (opts.import) {
