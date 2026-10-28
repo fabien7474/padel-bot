@@ -147,17 +147,25 @@ Les résultats contiennent des noms d'adhérents.
 - Les vues récentes sont conservées 7, 14 ou 90 jours (durées définies dans `monitor.js`). L'historique permanent est conservé `PADEL_HISTORY_YEARS` ans, puis supprimé année par année.
 - Le bureau doit fixer cette durée en fonction de la finalité (justification des avertissements et sanctions), l'inscrire au **registre des traitements** et annoncer ce contrôle dans le **règlement intérieur**.
 
-## Linux (mini-PC)
+## Linux (mini-PC, serveur)
 
 ```bash
 git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt && playwright install --with-deps chromium
-python padel_bot.py --login        # nécessite un écran la première fois
-( crontab -l; echo "*/30 * * * * cd $PWD && .venv/bin/python padel_bot.py" ) | crontab -
+./install-linux.sh 30          # Python, Playwright/Chromium, tâche cron toutes les 30 min
 ```
 
-Sous Linux, le bot utilise le Chromium de Playwright, et les notifications passent par `notify-send`.
+Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.
+
+**Connexion ADOC** : depuis le bureau du serveur, sur son écran ou par bureau à distance, ouvrir un terminal et lancer `.venv/bin/python padel_bot.py --login`. Une fenêtre Chromium normale s'ouvre : on s'y connecte, puis on appuie sur Entrée.
+
+**Reprendre la session et l'historique d'une autre machine**, par exemple d'un portable Windows (Git Bash, depuis le portable) :
+
+```bash
+scp -r /c/work/github/padel-bot/resultats  utilisateur@serveur:~/padel-bot/
+scp /c/Users/<moi>/AppData/Local/padel-bot/session.json  utilisateur@serveur:~/.local/share/padel-bot/
+```
+
+Arrêter le bot de l'ancienne machine **avant** la copie : sinon deux historiques divergent. La mémoire de travail du bot (les réservations en cours) repart de zéro, et les comparaisons reprennent dès le deuxième passage.
 
 ## Structure
 
@@ -168,5 +176,6 @@ Sous Linux, le bot utilise le Chromium de Playwright, et les notifications passe
 | `report.py` | rapport HTML autonome |
 | `history.py` | historique permanent chaîné |
 | `install-windows.ps1` | installation et tâche planifiée Windows |
+| `install-linux.sh` | installation et tâche cron Linux |
 | `connexion-adoc.cmd`, `test-passage.cmd`, `mettre-a-jour.cmd` | raccourcis double-clic |
 | `.env.example` | modèle de configuration |
