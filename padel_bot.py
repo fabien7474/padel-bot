@@ -181,9 +181,17 @@ def export(res, status=None):
     OUT.mkdir(parents=True, exist_ok=True)
     rows = res.get("rows") or []
     is_g = lambda p: p.strip().lower().startswith("invit") or p.strip().endswith("*")
-    alerts = sorted((r for r in rows if r["kind"] == "alert"), key=lambda r: r["detected"], reverse=True)
-    cancels = sorted((r for r in rows if r["kind"] == "cancel"), key=lambda r: r["detected"], reverse=True)
-    runs = sorted((r for r in rows if r["kind"] == "run"), key=lambda r: r["at"], reverse=True)
+    h_alerts, h_cancels = history_views()
+    # source de vérité = historique permanent ; la mémoire du navigateur ne fait que compléter
+    alerts = {a["key"]: a for a in rows if a["kind"] == "alert"}
+    alerts.update(h_alerts)
+    cancels = {f'{c["id"]}|{c["detected"]}': c for c in rows if c["kind"] == "cancel"}
+    seen_ids = {c["id"] for c in h_cancels.values()}
+    cancels = {k: c for k, c in cancels.items() if c["id"] not in seen_ids}
+    cancels.update(h_cancels)
+    alerts = sorted(alerts.values(), key=lambda r: r["detected"], reverse=True)
+    cancels = sorted(cancels.values(), key=lambda r: r["detected"], reverse=True)
+    runs = record_run(res)
     resas = res.get("reservations") or []
 
     write_csv("padel-cas-suspects.csv",
@@ -226,6 +234,59 @@ def export(res, status=None):
     except PermissionError:
         log("padel-rapport.html verrouillé : non mis à jour ce passage")
         tmp.unlink(missing_ok=True)
+
+
+def history_views():
+    """Cas suspects (90 j) et annulations (14 j) lus dans l'historique permanent, au format des lignes du rapport."""
+    import history
+    sp = " · ".join
+    al, ca = {}, {}
+    try:
+        evs = history.read_all(OUT / "historique")
+    except Exception as e:
+        log(f"Historique illisible pour le rapport : {e}")
+        return al, ca
+    for e in evs:
+        if e["type"] == "cas_suspect" and _days_ago(e["at"]) < 90:
+            a = e["cas"]
+            b, f = a.get("before") or {}, a.get("after") or {}
+            key = a.get("key") or e["hash"]
+            if key in al:
+                continue
+            al[key] = {"kind": "alert", "key": key, "detected": a.get("detected") or e["at"], "date": a["date"],
+                       "slot": f'{a.get("start")}-{a.get("end")}', "level": a.get("level"), "score": a.get("score"),
+                       "beforeCourt": (b.get("court") or "") + (" (ticket)" if b.get("ticket") else ""), "beforePlayers": sp(b.get("players") or []),
+                       "afterCourt": (f.get("court") or "") + (" (ticket)" if f.get("ticket") else ""), "afterPlayers": sp(f.get("players") or []),
+                       "removed": sp(a.get("removed") or []), "added": sp(a.get("added") or []), "reasons": " ; ".join(a.get("reasons") or [])}
+        elif e["type"] == "reservation_annulee" and _days_ago(e["at"]) < 14:
+            c = e["reservation"]
+            if any(x["id"] == c.get("id") for x in ca.values()):
+                continue
+            ps = c.get("players") or []
+            ca[f'{c.get("id")}|{e["at"]}'] = {"kind": "cancel", "id": c.get("id"), "date": c["date"], "slot": f'{c.get("start")}-{c.get("end")}',
+                                              "court": c.get("court") or "", "players": sp(ps),
+                                              "guests": sum(1 for p in ps if p.strip().lower().startswith("invit") or p.strip().endswith("*")),
+                                              "early": bool(c.get("early")), "firstSeen": c.get("firstSeen") or e["at"],
+                                              "detected": c.get("detected") or e["at"], "hoursBeforeSlot": c.get("hoursBeforeSlot") or 0}
+    return al, ca
+
+
+def record_run(res):
+    """Journal des passages tenu côté Python (7 jours), indépendant de la mémoire du navigateur."""
+    path = DATA / "passages.json"
+    try:
+        runs = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    except ValueError:
+        runs = []
+    r = {"at": res.get("run") or datetime.now(timezone.utc).isoformat(), "ok": bool(res.get("ok"))}
+    if res.get("ok"):
+        r.update(active=res.get("activeCount"), created=res.get("created"), cancelled=res.get("cancelled"), alerts=len(res.get("alerts") or []))
+    else:
+        r.update(error=res.get("error") or "", message=res.get("message") or "")
+    runs = [x for x in runs if _days_ago(x["at"]) < 7] + [r]
+    DATA.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(runs, ensure_ascii=False), encoding="utf-8")
+    return sorted(runs, key=lambda x: x["at"], reverse=True)
 
 
 def _days_ago(iso):
