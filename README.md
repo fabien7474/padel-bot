@@ -87,7 +87,9 @@ Le bot ne stocke **aucun mot de passe**.
 
 Une fréquence de 15 à 30 minutes maintient les sessions actives plus longtemps.
 
-**Pause nocturne** : de minuit à 7h (réglable avec `PADEL_PAUSE`), le bot ne relève pas les réservations. Il fait seulement une **visite légère d'ADOC toutes les 30 minutes environ** pour que la session ne s'éteigne pas, faute de quoi la connexion FFT expirerait pendant la nuit et il faudrait refaire le captcha chaque matin. Cette visite se désactive avec `PADEL_PAUSE_KEEPALIVE=non`. Les changements faits pendant la nuit sont détectés au premier passage du matin. Une annulation de nuit est alors datée entre le dernier passage de la veille et celui du matin.
+**Durée de la session ADOC** : le serveur ADOC ferme une session restée environ 30 minutes sans activité, et la reconnexion automatique par la FFT est bloquée pour un navigateur piloté. Le bot est donc lancé **toutes les 10 minutes** : il fait un relevé complet toutes les `PADEL_INTERVALLE` minutes (30 par défaut) et, entre deux relevés, une simple visite de la page d'accueil ADOC (sans navigateur, quelques Ko) qui garde la session vivante. Si la session est malgré tout perdue, `bot.log` indique sur quelle page la reconnexion a échoué, et le rapport passe en « session expirée ».
+
+**Pause nocturne** : de minuit à 7h (réglable avec `PADEL_PAUSE`), le bot ne relève pas les réservations ; il continue seulement la visite d'entretien toutes les 10 minutes, pour ne pas devoir se reconnecter chaque matin. Cette visite se désactive avec `PADEL_PAUSE_KEEPALIVE=non`. Les changements faits pendant la nuit sont détectés au premier relevé du matin ; une annulation de nuit est alors datée entre le dernier relevé de la veille et celui du matin.
 
 ## Configuration
 
@@ -102,7 +104,7 @@ cp .env.example .env
 | `PADEL_OUT` | dossier des résultats (par exemple un dossier Google Drive) | `resultats/` dans le projet |
 | `PADEL_HISTORY_YEARS` | conservation de l'historique permanent, en années | `3` |
 | `PADEL_PAUSE` | pause nocturne, sans aucun passage (`HH:MM-HH:MM`, peut chevaucher minuit ; `non` pour désactiver) | `00:00-07:00` |
-| `PADEL_PAUSE_KEEPALIVE` | visite légère d'ADOC pendant la pause pour garder la session | `oui` |
+| `PADEL_PAUSE_KEEPALIVE` | visite d'entretien de la session pendant la pause nocturne | `oui` |
 | `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
 | `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |
 | `PADEL_INTERVALLE` | minutes entre deux passages, pour afficher le prochain passage et détecter un bot arrêté (écrit par `install-linux.sh`) | `30` |
@@ -154,7 +156,7 @@ Les résultats contiennent des noms d'adhérents.
 
 ```bash
 git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
-./install-linux.sh 30          # Python, Playwright/Chromium, tâche cron toutes les 30 min
+./install-linux.sh 30          # Python, Playwright/Chromium ; cron toutes les 10 min, relevé toutes les 30 min
 ```
 
 Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.

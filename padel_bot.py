@@ -141,6 +141,9 @@ def ensure_session(page):
             pass
     page.wait_for_timeout(2000)
     if not page.url.startswith(ADOC):
+        from urllib.parse import urlparse
+        u = urlparse(page.url)
+        log(f"Reconnexion automatique par la FFT impossible (bloqué sur {u.netloc}{u.path})")
         page.goto(HOME_URL, wait_until="domcontentloaded")
     return logged_in(page)
 
@@ -376,16 +379,53 @@ def bot_status(res, prev):
             "details": res.get("detailsRead"), "dwr": res.get("dwr"), "version": ver}
 
 
-def keepalive():
-    """Pendant la pause nocturne : visite légère d'ADOC pour garder la session (FFT + ADOC) active.
-    Ne lit aucune réservation et n'écrit aucun résultat. Au plus une visite toutes les 25 minutes."""
-    from playwright.sync_api import sync_playwright
-    mark = DATA / "keepalive.txt"
+def http_keepalive():
+    """Visite légère d'ADOC sans navigateur, avec les cookies de session.json. Renvoie True si la session est vivante.
+    Le serveur ADOC (Java) ferme une session restée ~30 min sans requête : cron lance le bot toutes les 10 min."""
+    import http.cookiejar, urllib.request
+    from urllib.parse import urlparse
+    if not COOKIES.exists():
+        return False
+    raw = json.loads(COOKIES.read_text(encoding="utf-8"))
+    jar = http.cookiejar.CookieJar()
+    for c in raw:
+        dom = c.get("domain") or ""
+        jar.set_cookie(http.cookiejar.Cookie(0, c["name"], c["value"], None, False, dom, True, dom.startswith("."),
+                                             c.get("path") or "/", True, bool(c.get("secure")),
+                                             int(c["expires"]) if (c.get("expires") or -1) > 0 else None,
+                                             False, None, None, {}))
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    op.addheaders = [("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"),
+                     ("Accept-Language", "fr-FR,fr;q=0.9")]
     try:
-        if mark.exists() and (datetime.now().timestamp() - mark.stat().st_mtime) < 25 * 60:
-            return 0
-    except OSError:
-        pass
+        with op.open(HOME_URL, timeout=30) as r:
+            html = r.read().decode("utf-8", "replace")
+            final = r.geturl()
+    except Exception as e:
+        log(f"Entretien de session : ADOC injoignable ({e})")
+        return None          # réseau : on ne conclut rien
+    import re
+    ok = final.startswith(ADOC) and re.search(r'href="[^"]*logout', html) is not None
+    if ok:   # reporte d'éventuels cookies renouvelés par le serveur
+        new = {(c.domain, c.path, c.name): c.value for c in jar}
+        for c in raw:
+            c["value"] = new.get((c.get("domain"), c.get("path") or "/", c["name"]), c["value"])
+        COOKIES.write_text(json.dumps(raw), encoding="utf-8")
+    else:
+        log(f"Entretien de session : déconnecté (page {urlparse(final).netloc}{urlparse(final).path})")
+    return ok
+
+
+def keepalive():
+    """Entre deux relevés et pendant la pause nocturne : garde la session ADOC vivante, sans rien relever.
+    Si elle est perdue, tente une reconnexion par la FFT ; sinon signale la session expirée dans le rapport."""
+    ok = http_keepalive()
+    if ok is None:
+        return 0
+    if ok:
+        (DATA / "keepalive.txt").write_text(datetime.now().isoformat(), encoding="utf-8")
+        return 0
+    from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         ctx = launch(p, headless=True)
         try:
@@ -394,16 +434,32 @@ def keepalive():
             ok = ensure_session(page)
             if ok:
                 save_cookies(ctx)
+                log("Entretien de session : session rouverte par la FFT")
         finally:
             ctx.close()
-    DATA.mkdir(parents=True, exist_ok=True)
-    mark.write_text(datetime.now().isoformat(), encoding="utf-8")
+    if ok:
+        return 0
     prev = json.loads(STATUS.read_text(encoding="utf-8")) if STATUS.exists() else {}
-    if not ok and prev.get("error") != "SESSION":
-        log("Pause nocturne : session ADOC perdue (reconnexion nécessaire)")
-        notify("Bot padel : session ADOC expirée", "Lancez connexion-adoc.cmd et reconnectez-vous à ADOC.")
-        STATUS.write_text(json.dumps({**prev, "at": datetime.now(timezone.utc).isoformat(), "ok": False, "error": "SESSION"}), encoding="utf-8")
-    return 0 if ok else 2
+    if prev.get("error") != "SESSION":
+        log("Session ADOC perdue (reconnexion nécessaire)")
+        notify("Bot padel : session ADOC expirée", "Reconnectez le bot à ADOC (padel_bot.py --login).")
+        res = {"ok": False, "error": "SESSION", "message": "Session ADOC perdue entre deux relevés.",
+               "run": datetime.now(timezone.utc).isoformat()}
+        archive(res, None, prev)
+        export(res, bot_status(res, prev))
+        STATUS.write_text(json.dumps({**prev, "at": res["run"], "ok": False, "error": "SESSION"}), encoding="utf-8")
+    return 2
+
+
+def scan_due():
+    """Vrai si le dernier relevé réussi date d'au moins PADEL_INTERVALLE minutes (marge de 3 min pour cron)."""
+    try:
+        st = json.loads(STATUS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if not st.get("ok"):
+        return True
+    return _days_ago(st["at"]) * 1440 >= INTERVAL - 3
 
 
 def history_seed():
@@ -521,12 +577,16 @@ if __name__ == "__main__":
             login()
         elif "--verifier" in sys.argv:
             sys.exit(verify_history())
-        elif in_pause() and "--forcer" not in sys.argv:
-            # pause nocturne : pas de relevé, seulement une visite légère pour ne pas perdre la session
+        elif "--forcer" in sys.argv:
+            sys.exit(run_once())
+        elif in_pause():
+            # pause nocturne : pas de relevé, seulement l'entretien de la session
             keep = os.environ.get("PADEL_PAUSE_KEEPALIVE", "oui").strip().lower() not in ("non", "no", "0", "off")
             sys.exit(keepalive() if keep else 0)
-        else:
+        elif scan_due():
             sys.exit(run_once())
+        else:
+            sys.exit(keepalive())   # entre deux relevés : on garde la session vivante
     except SystemExit:
         raise
     except Exception:

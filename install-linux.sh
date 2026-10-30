@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Installation du bot padel sous Linux (Linux Mint / Ubuntu / Debian)
-# Usage : ./install-linux.sh [minutes]      (fréquence des passages, 30 par défaut)
+# Usage : ./install-linux.sh [minutes]      (fréquence des relevés, 30 par défaut ; cron toutes les 10 min
+#                                           pour entretenir la session ADOC entre deux relevés)
 set -euo pipefail
 MINUTES="${1:-30}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -24,8 +25,8 @@ else echo "PADEL_INTERVALLE=$MINUTES" >> .env; fi
 if [ -f .env ]; then grep -E '^\s*PADEL_' .env | sed 's/^/   /' || true
 else echo "   Résultats dans : $HERE/resultats (modifiable via .env, voir .env.example)"; fi
 
-echo "4/4 Tâche planifiée (cron, toutes les $MINUTES minutes)..."
-LINE="*/$MINUTES * * * * cd $HERE && /usr/bin/flock -n /tmp/padel-bot.lock .venv/bin/python padel_bot.py >/dev/null 2>&1"
+echo "4/4 Tâche planifiée (cron toutes les 10 min : relevé toutes les $MINUTES min, entretien de session sinon)..."
+LINE="*/10 * * * * cd $HERE && /usr/bin/flock -n /tmp/padel-bot.lock .venv/bin/python padel_bot.py >/dev/null 2>&1"
 ( crontab -l 2>/dev/null | grep -v 'padel_bot.py' ; echo "$LINE" ) | crontab -
 crontab -l | grep padel_bot.py | sed 's/^/   /'
 
