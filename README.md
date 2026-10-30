@@ -117,6 +117,7 @@ Le fichier `.env` est propre à chaque machine et n'est jamais envoyé sur GitHu
 |---|---|---|
 | `padel-rapport.html` | **rapport lisible** : état du bot, chiffres clés, cas suspects, annulations, réservations, passages | réécrit à chaque passage |
 | `padel-statut.json` | état du bot (dernier passage, prochain passage, session, cas suspects, historique), **sans aucun nom** | réécrit à chaque passage |
+| `bot-log.txt` | journal technique (sans noms), plus récent en haut | 300 dernières lignes |
 | `index.html` | renvoie vers le rapport (page d'accueil quand le dossier est servi en web) | créé une fois |
 | `padel-cas-suspects.csv` | cas suspects récents | 90 jours |
 | `padel-annulations.csv` | annulations récentes | 14 jours |
@@ -161,7 +162,7 @@ git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
 
 Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.
 
-**Connexion ADOC** : depuis le bureau du serveur, sur son écran ou par bureau à distance, ouvrir un terminal et lancer `.venv/bin/python padel_bot.py --login`. Une fenêtre Chromium normale s'ouvre : on s'y connecte, puis on appuie sur Entrée.
+**Connexion ADOC** : sur le bureau du serveur (sur son écran ou par bureau à distance, y compris depuis un téléphone), double-cliquer sur **« Reconnecter le bot ADOC »** (créé par `install-linux.sh` ; sinon `./reconnexion-adoc.sh`). Une fenêtre Chromium normale s'ouvre : on s'y connecte jusqu'à l'accueil ADOC. Le bot détecte la connexion tout seul, ferme la fenêtre, puis fait un relevé de contrôle. Pendant ce temps, la tâche cron attend : elle ne peut pas fermer la fenêtre de connexion.
 
 **Reprendre la session et l'historique d'une autre machine**, par exemple d'un portable Windows (Git Bash, depuis le portable) :
 
@@ -185,6 +186,7 @@ Le dossier des résultats est alors servi par Tailscale, **uniquement aux appare
 - Portable ou téléphone : installer l'application Tailscale, se connecter avec le même compte, puis ouvrir `http://fab-beelink/` (le nom de la machine dans Tailscale). Sur le téléphone, « Ajouter à l'écran d'accueil ».
 - La page se recharge toutes les 5 minutes. Le bloc **État du bot** donne : actif, en pause nocturne ou arrêté, dernier passage, dernier passage réussi, prochain passage, nombre de cas suspects, fiches lues, intégrité de l'historique et version.
 - Si aucun passage n'a eu lieu à l'heure prévue (Beelink éteint, cron arrêté), la page affiche en rouge « Le bot ne tourne plus », même si elle est vieille.
+- Le lien **Journal technique** (`bot-log.txt`, sans noms d'adhérents, plus récent en haut) montre chaque passage, y compris les entretiens de session toutes les 10 minutes.
 - Les CSV restent téléchargeables depuis la même adresse (`http://fab-beelink/padel-historique-cas-suspects.csv`, etc.).
 
 Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni styles ni script), et les noms des adhérents seraient stockés chez un tiers. Dropbox reste une bonne cible pour la **sauvegarde** de l'historique.
@@ -200,5 +202,6 @@ Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni style
 | `install-windows.ps1` | installation et tâche planifiée Windows |
 | `install-linux.sh` | installation et tâche cron Linux |
 | `publier-rapport.sh` | rapport consultable à distance via Tailscale |
+| `reconnexion-adoc.sh` | reconnexion à ADOC (raccourci de bureau « Reconnecter le bot ADOC ») |
 | `connexion-adoc.cmd`, `test-passage.cmd`, `mettre-a-jour.cmd` | raccourcis double-clic |
 | `.env.example` | modèle de configuration |

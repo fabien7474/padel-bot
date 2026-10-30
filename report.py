@@ -96,7 +96,7 @@ td{{border-bottom:1px solid var(--line);padding:6px 8px;vertical-align:top;font-
 .st div{{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:5px 0;font-size:13.5px}}
 .st dt{{color:var(--mut)}}.st dd{{margin:0;text-align:right;font-variant-numeric:tabular-nums}}
 .dot{{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--good)}}.dot.bad{{background:var(--hi)}}.dot.warn{{background:var(--mid)}}
-.okc{{color:var(--good)}}small{{color:var(--mut)}}footer{{color:var(--mut);font-size:12px;margin-top:24px}}
+.okc{{color:var(--good)}}a{{color:inherit}}small{{color:var(--mut)}}footer{{color:var(--mut);font-size:12px;margin-top:24px}}
 </style></head><body><main>
 <h1>Surveillance padel</h1><p class="sub">Annecy Tennis · réservations « Joueur » des pistes de padel, J à J+7 · mis à jour le {gen}</p>
 <p class="banner bad" id="stale" hidden></p>
@@ -131,7 +131,9 @@ def _status(st, res, n7, n90, tz):
              ("Machine", escape(st.get("host") or "")),
              ("Version", escape(st.get("version") or ""))]
     dl = "".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in items)
-    return f'<section class="card"><h2>État du bot</h2><dl class="st">{dl}</dl></section>'
+    return (f'<section class="card"><h2>État du bot</h2><dl class="st">{dl}</dl>'
+            f'<p class="note" style="margin:10px 0 0"><a href="bot-log.txt">Journal technique</a> (mis à jour toutes les 10 min, '
+            f'plus récent en haut)</p></section>')
 
 
 def _script(st):

@@ -55,6 +55,20 @@ def log(msg):
         pass
 
 
+def publish_log():
+    """Copie du journal technique (sans noms d'adhérents) à côté du rapport, plus récent en haut."""
+    try:
+        if LOG.exists():
+            OUT.mkdir(parents=True, exist_ok=True)
+            lines = LOG.read_text(encoding="utf-8").splitlines()[-300:]
+            ka = DATA / "keepalive.txt"
+            head = [f"Journal du bot padel – copié le {datetime.now(PARIS):%d/%m/%Y %H:%M:%S}",
+                    f"Dernier entretien de session réussi : {ka.read_text(encoding='utf-8')[:19].replace('T', ' ') if ka.exists() else 'aucun'}", ""]
+            (OUT / "bot-log.txt").write_text("\n".join(head + lines[::-1]) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def notify(title, text):
     """Notification Windows (bulle), sans dépendance."""
     if os.name != "nt":
@@ -532,21 +546,32 @@ def login():
     from playwright.sync_api import sync_playwright
     PROFILE.mkdir(parents=True, exist_ok=True)
     port = 9333
+    if os.name != "nt":   # même verrou que la tâche cron : aucun passage ne fermera la fenêtre de connexion
+        import fcntl
+        global _LOCK
+        _LOCK = open("/tmp/padel-bot.lock", "w")
+        print("Attente de la fin d'un éventuel passage du bot...")
+        fcntl.flock(_LOCK, fcntl.LOCK_EX)
     with sync_playwright() as p:
         exe = browser_exe(p)
-    print("Une fenêtre Edge va s'ouvrir : connectez-vous à ADOC avec le compte du club")
+    print("Une fenêtre de navigateur va s'ouvrir : connectez-vous à ADOC avec le compte du club")
     print("(jusqu'à l'accueil ADOC, votre nom en haut à droite). NE FERMEZ PAS cette fenêtre.")
     close_profile_browsers()
     proc = subprocess.Popen([exe, f"--user-data-dir={PROFILE}", f"--remote-debugging-port={port}",
                              "--no-first-run", "--no-default-browser-check", ADOC])
-    input("\nUne fois connecté, revenez ici et appuyez sur Entrée... ")
+    print("\nJ'attends la connexion (jusqu'à 15 minutes)...")
     ok = False
-    for _ in range(10):                      # attend que le port de contrôle réponde
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=2)
+    for _ in range(180):                     # surveille les onglets sans piloter le navigateur (la FFT l'accepte)
+        time.sleep(5)
+        if proc.poll() is not None:
             break
-        except OSError:
-            time.sleep(1)
+        try:
+            tabs = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/json", timeout=3).read())
+        except (OSError, ValueError):
+            continue
+        if any(t.get("url", "").startswith(ADOC) and "accueil.do" in t.get("url", "") for t in tabs):
+            time.sleep(3)
+            break
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
@@ -569,12 +594,17 @@ def login():
     print("Session enregistrée, le bot peut tourner." if ok else
           "Je ne vois pas de session ADOC ouverte : relancez et terminez bien la connexion.")
     log("Connexion manuelle : " + ("OK" if ok else "échec"))
+    if ok:
+        print("Relevé de contrôle en cours...")
+        code = run_once()
+        print("Le bot fonctionne : rapport à jour." if code == 0 else "Le relevé de contrôle a échoué : voir bot.log.")
+    return 0 if ok else 2
 
 
 if __name__ == "__main__":
     try:
         if "--login" in sys.argv:
-            login()
+            sys.exit(login())
         elif "--verifier" in sys.argv:
             sys.exit(verify_history())
         elif "--forcer" in sys.argv:
@@ -592,3 +622,5 @@ if __name__ == "__main__":
     except Exception:
         log("ERREUR\n" + traceback.format_exc())
         sys.exit(1)
+    finally:
+        publish_log()

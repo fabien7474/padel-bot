@@ -30,12 +30,29 @@ LINE="*/10 * * * * cd $HERE && /usr/bin/flock -n /tmp/padel-bot.lock .venv/bin/p
 ( crontab -l 2>/dev/null | grep -v 'padel_bot.py' ; echo "$LINE" ) | crontab -
 crontab -l | grep padel_bot.py | sed 's/^/   /'
 
+# Raccourci « Reconnecter ADOC » sur le bureau (utilisable aussi par bureau à distance depuis un téléphone)
+DESK="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+if [ -d "$DESK" ]; then
+  cat > "$DESK/reconnecter-adoc.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Reconnecter le bot ADOC
+Comment=Ouvre ADOC pour reconnecter le bot padel
+Exec=$HERE/reconnexion-adoc.sh
+Terminal=true
+Icon=web-browser
+DESKTOP
+  chmod +x "$DESK/reconnecter-adoc.desktop"
+  gio set "$DESK/reconnecter-adoc.desktop" metadata::xfce-exe-checksum "$(sha256sum "$DESK/reconnecter-adoc.desktop" | cut -d' ' -f1)" 2>/dev/null || true
+  echo "   Raccourci « Reconnecter le bot ADOC » créé sur le bureau."
+fi
+
 DATA="${PADEL_DATA:-$HOME/.local/share/padel-bot}"
 if [ -f "$DATA/session.json" ]; then
   echo; echo "Session ADOC déjà présente ($DATA/session.json)."
 else
   echo; echo "Il reste à se connecter à ADOC, depuis le bureau du Beelink (écran ou bureau à distance) :"
-  echo "   cd $HERE && .venv/bin/python padel_bot.py --login"
+  echo "   double-clic sur « Reconnecter le bot ADOC » (ou : $HERE/reconnexion-adoc.sh)"
   echo "ou à copier la session depuis le portable (voir README)."
 fi
 echo; echo "Rapport consultable depuis le portable et le téléphone (via Tailscale) : ./publier-rapport.sh"
