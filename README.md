@@ -166,6 +166,21 @@ git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
 
 Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.
 
+| Action | Commande (dans `~/padel-bot`) |
+|---|---|
+| Mettre à jour le bot | `git pull` |
+| Voir le planning | `crontab -l` |
+| Changer le planning | `crontab -e` (ou relancer `./install-linux.sh` pour revenir au planning par défaut) |
+| Lancer un relevé à la main | `.venv/bin/python padel_bot.py --releve; echo $?` |
+| Lancer un entretien de session à la main | `.venv/bin/python padel_bot.py --entretien; echo $?` |
+| Se reconnecter à ADOC | double-clic sur « Reconnecter le bot ADOC », ou `./reconnexion-adoc.sh` |
+| Tester les alertes e-mail | `.venv/bin/python padel_bot.py --test-alerte` |
+| Vérifier l'intégrité de l'historique | `.venv/bin/python padel_bot.py --verifier` |
+| Ouvrir le rapport | `xdg-open resultats/padel-rapport.html` |
+| Voir le journal technique | `tail -20 bot.log` |
+
+Attention à `crontab <fichier>` : la commande **remplace** toute la crontab par le contenu du fichier, et un fichier vide efface les tâches du bot. Pour sauvegarder puis restaurer : `crontab -l > ~/cron.bak` puis `crontab ~/cron.bak`, après avoir vérifié que `~/cron.bak` n'est pas vide.
+
 **Alertes par e-mail** : le bot envoie un e-mail quand la session ADOC est perdue (avec la marche à suivre), quand les relevés ou les entretiens de session ne tournent plus à l'heure prévue, quand la tâche cron des relevés a disparu, quand un relevé échoue ou quand le bot plante. Un rappel part toutes les 6 heures tant que le problème dure, puis un e-mail « Rétabli ». Les e-mails ne contiennent aucun nom d'adhérent. Réglage dans `.env` (jamais sur GitHub) : `PADEL_ALERTE_EMAIL` et `PADEL_SMTP_PASSWORD`, un [mot de passe d'application Gmail](https://myaccount.google.com/apppasswords). Test : `.venv/bin/python padel_bot.py --test-alerte`. Ces contrôles tournent sur le Beelink : s'il est éteint, si Internet est coupé ou si la crontab est vidée en entier, c'est la **surveillance externe** qui prévient.
 
 **Surveillance externe** : à chaque passage (toutes les 5 à 9 minutes), le bot envoie un signal de vie à un service comme [healthchecks.io](https://healthchecks.io) (gratuit). Si les signaux cessent pendant plus de 25 minutes environ, le service envoie lui-même un e-mail, puis un autre quand le bot repart. Un plantage du bot est signalé tout de suite. Réglage : créer un « check » (période 10 min, délai de grâce 15 min) et coller son adresse dans `.env` (`PADEL_HEALTHCHECK_URL`).
@@ -192,7 +207,7 @@ cd ~/padel-bot && ./publier-rapport.sh
 Le dossier des résultats est alors servi par Tailscale, **uniquement aux appareils de votre réseau Tailscale** : rien n'est publié sur Internet, et le trafic est chiffré par Tailscale. Ça survit aux redémarrages ; `./publier-rapport.sh arret` le désactive.
 
 - Portable ou téléphone : installer l'application Tailscale, se connecter avec le même compte, puis ouvrir `http://fab-beelink/` (le nom de la machine dans Tailscale). Sur le téléphone, « Ajouter à l'écran d'accueil ».
-- La page se recharge toutes les 5 minutes. Le bloc **État du bot** donne : actif, en pause nocturne ou arrêté, dernier passage, dernier passage réussi, prochain passage, nombre de cas suspects, fiches lues, intégrité de l'historique et version.
+- La page se recharge toutes les 5 minutes. Le bloc **État du bot** donne : actif ou arrêté (et, sous Windows, en pause nocturne), dernier passage, dernier passage réussi, prochain relevé, planning des relevés lu dans cron, nombre de cas suspects, fiches lues, intégrité de l'historique et version.
 - Si aucun passage n'a eu lieu à l'heure prévue (Beelink éteint, cron arrêté), la page affiche en rouge « Le bot ne tourne plus », même si elle est vieille.
 - Le lien **Journal technique** (`bot-log.txt`, sans noms d'adhérents, plus récent en haut) montre chaque passage, y compris les entretiens de session qui échouent et les alertes envoyées.
 - Les CSV restent téléchargeables depuis la même adresse (`http://fab-beelink/padel-historique-cas-suspects.csv`, etc.).
