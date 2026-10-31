@@ -2,9 +2,12 @@
 
 Usage :
   python padel_bot.py --login   ouvre Edge pour vous connecter une fois à ADOC (à refaire si la session expire)
-  python padel_bot.py           un passage (lancé toutes les 10 minutes par le Planificateur de tâches)
+  python padel_bot.py --releve    un relevé complet (Linux : lancé par cron, seule source du planning)
+  python padel_bot.py --entretien visite légère d'ADOC qui garde la session vivante (Linux : cron, ~toutes les 7 min)
   python padel_bot.py --verifier  contrôle que l'historique permanent n'a pas été modifié
-  python padel_bot.py --forcer    passage immédiat, même pendant la pause nocturne (PADEL_PAUSE)
+  python padel_bot.py --forcer    relevé immédiat (identique à --releve)
+  python padel_bot.py --test-alerte  envoie un e-mail de test à PADEL_ALERTE_EMAIL
+  python padel_bot.py           (Windows, Planificateur) relevé toutes les PADEL_INTERVALLE min, entretien sinon
 
 Le bot n'enregistre aucun mot de passe : il réutilise la session ouverte dans son propre profil Edge,
 rangé hors du dossier synchronisé (Windows : %LOCALAPPDATA%\\padel-bot ; Linux : ~/.local/share/padel-bot).
@@ -83,6 +86,66 @@ def notify(title, text):
           f"$n.Visible=$true;$n.ShowBalloonTip(15000,'{t}','{x}','Warning');Start-Sleep -s 16;$n.Dispose()")
     subprocess.Popen(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def send_mail(subject, body):
+    """E-mail d'alerte (SMTP, Gmail par défaut). Destinataire et mot de passe d'application dans .env, jamais dans git."""
+    import smtplib, ssl
+    from email.message import EmailMessage
+    to = os.environ.get("PADEL_ALERTE_EMAIL", "").strip()
+    pwd = os.environ.get("PADEL_SMTP_PASSWORD", "").replace(" ", "")
+    if not to:
+        return False
+    if not pwd:
+        log("Alerte e-mail non envoyée : PADEL_SMTP_PASSWORD absent de .env")
+        return False
+    user = os.environ.get("PADEL_SMTP_USER", "").strip() or to
+    msg = EmailMessage()
+    msg["Subject"], msg["From"], msg["To"] = f"[Bot padel] {subject}", user, to
+    host = os.uname().nodename if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", "")
+    tail = LOG.read_text(encoding="utf-8").splitlines()[-15:] if LOG.exists() else []
+    msg.set_content(f"{body}\n\nMachine : {host}\nHeure : {datetime.now(PARIS):%d/%m/%Y %H:%M}\n\n"
+                    "Dernières lignes du journal technique :\n" + "\n".join(tail))
+    try:
+        with smtplib.SMTP(os.environ.get("PADEL_SMTP_HOST", "smtp.gmail.com"),
+                          int(os.environ.get("PADEL_SMTP_PORT", "587")), timeout=30) as s:
+            s.starttls(context=ssl.create_default_context())
+            s.login(user, pwd)
+            s.send_message(msg)
+        log(f"Alerte e-mail envoyée : {subject}")
+        return True
+    except Exception as e:
+        log(f"Alerte e-mail impossible ({type(e).__name__}: {e})")
+        return False
+
+
+ALERTS = DATA / "alertes.json"
+
+
+def alert(kind, active, subject="", body=""):
+    """Alerte e-mail sans répétition : à l'apparition du problème, rappel toutes les PADEL_ALERTE_RAPPEL_H heures,
+    puis un e-mail « rétabli » quand le problème disparaît."""
+    try:
+        state = json.loads(ALERTS.read_text(encoding="utf-8")) if ALERTS.exists() else {}
+    except ValueError:
+        state = {}
+    cur, now = state.get(kind), datetime.now(timezone.utc)
+    if active:
+        every = float(os.environ.get("PADEL_ALERTE_RAPPEL_H", "6"))
+        if cur and (now - datetime.fromisoformat(cur["sent"])).total_seconds() < every * 3600:
+            return
+        if not send_mail(subject if not cur else f"{subject} (rappel)", body):
+            return                       # e-mail non configuré ou envoi en échec : nouvel essai au passage suivant
+        state[kind] = {"since": cur["since"] if cur else now.isoformat(), "sent": now.isoformat(), "subject": subject}
+    elif cur:
+        since = datetime.fromisoformat(cur["since"]).astimezone(PARIS)
+        if not send_mail(f"Rétabli : {cur.get('subject', kind)}", f"Le problème signalé le {since:%d/%m/%Y à %H:%M} est résolu."):
+            return
+        del state[kind]
+    else:
+        return
+    DATA.mkdir(parents=True, exist_ok=True)
+    ALERTS.write_text(json.dumps(state), encoding="utf-8")
 
 
 def close_profile_browsers():
@@ -363,15 +426,118 @@ def in_pause(now=None):
     return a <= t < b if a <= b else (t >= a or t < b)   # gère une pause à cheval sur minuit (ex. 23:00-06:00)
 
 
+def _cron_field(spec, lo, hi):
+    vals = set()
+    for part in spec.split(","):
+        rng, _, step = part.partition("/")
+        if rng == "*":
+            a, b = lo, hi
+        elif "-" in rng:
+            a, b = map(int, rng.split("-"))
+        else:
+            a = int(rng)
+            b = hi if step else a
+        vals.update(range(a, b + 1, int(step or 1)))
+    return vals
+
+
+def cron_releves():
+    """Horaires des relevés lus dans la crontab, seule source du planning sous Linux (lignes « padel_bot.py --releve »)."""
+    if os.name == "nt":
+        return []
+    try:
+        out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return []
+    entries = []
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) < 6 or f[0].startswith(("#", "@")) or "padel_bot.py" not in line or "--releve" not in line:
+            continue
+        try:
+            entries.append({"min": _cron_field(f[0], 0, 59), "hour": _cron_field(f[1], 0, 23), "dom": _cron_field(f[2], 1, 31),
+                            "mon": _cron_field(f[3], 1, 12), "dow": {d % 7 for d in _cron_field(f[4], 0, 7)},
+                            "spec": (f[0], f[1])})
+        except ValueError:
+            continue
+    return entries
+
+
+def cron_time(entries, start, step):
+    """Premier horaire de relevé à partir de start (step = +1 : suivant, -1 : précédent), à la minute près."""
+    t = start.replace(second=0, microsecond=0)
+    for _ in range(3 * 1440):
+        if any(t.minute in e["min"] and t.hour in e["hour"] and t.day in e["dom"] and t.month in e["mon"]
+               and t.isoweekday() % 7 in e["dow"] for e in entries):
+            return t
+        t += timedelta(minutes=step)
+    return None
+
+
+def planning_text(entries):
+    parts = []
+    for e in entries:
+        m, h = e["spec"]
+        hours = "toute la journée" if h == "*" else ", ".join(x.replace("-", "h–") + "h" for x in h.split(","))
+        if m.startswith("*/"):
+            parts.append(f"toutes les {m[2:]} min ({hours})")
+        elif m.isdigit() and h.isdigit():
+            parts.append(f"{int(h)}h{int(m):02d}")
+        else:
+            parts.append(f"cron « {m} {h} »")
+    return " · ".join(parts)
+
+
+def health_check():
+    """Après chaque passage : e-mail si la session ADOC est perdue, si les relevés ou les entretiens ne tournent plus,
+    ou si la tâche cron des relevés a disparu. (Si le Beelink est éteint ou cron vidé en entier, rien ne peut partir d'ici.)"""
+    try:
+        st = json.loads(STATUS.read_text(encoding="utf-8")) if STATUS.exists() else {}
+    except ValueError:
+        st = {}
+    session = st.get("error") == "SESSION"
+    alert("session", session, "Session ADOC perdue",
+          "Le bot n'est plus connecté à ADOC et n'a pas pu se reconnecter seul.\n"
+          "Pour le reconnecter : sur le bureau du Beelink (écran ou bureau à distance), double-clic sur "
+          "« Reconnecter le bot ADOC » (ou ./reconnexion-adoc.sh), puis se connecter jusqu'à l'accueil ADOC.")
+    alert("echec", st.get("ok") is False and not session, "Relevé en échec",
+          f"Le dernier relevé a échoué : {st.get('error')}.")
+    if os.name == "nt":
+        return
+    entries = cron_releves()
+    alert("cron", not entries, "Tâche cron des relevés absente",
+          "La crontab ne contient plus de ligne « padel_bot.py --releve » : aucun relevé n'est planifié.\n"
+          "Pour la remettre : ./install-linux.sh (ou crontab -e).")
+    now = datetime.now(PARIS)
+    last = st.get("releve_at") or st.get("at")
+    due = cron_time(entries, now - timedelta(minutes=12), -1) if entries else None   # marge : délai aléatoire + durée
+    missed = bool(due and last and datetime.fromisoformat(last) < due - timedelta(minutes=1))
+    alert("releve", missed, "Relevés arrêtés",
+          f"Aucun relevé depuis le {datetime.fromisoformat(last).astimezone(PARIS):%d/%m/%Y à %H:%M}"
+          f" alors qu'un relevé était prévu à {due:%H:%M}." if missed else "")
+    ka = DATA / "keepalive.txt"
+    try:
+        age = (datetime.now() - datetime.fromisoformat(ka.read_text(encoding="utf-8").strip()[:26])).total_seconds() / 60
+    except (OSError, ValueError):
+        age = 0
+    stale = age > 25 and not session
+    alert("entretien", stale, "Entretien de session arrêté",
+          f"Aucun contact réussi avec ADOC depuis {int(age)} min (réseau, site ADOC indisponible, ou tâche cron "
+          "« --entretien » absente). La session risque d'expirer." if stale else "")
+
+
 def bot_status(res, prev):
     """État du bot affiché en tête du rapport et écrit dans padel-statut.json (aucun nom d'adhérent)."""
     import history
     now = datetime.now(PARIS) if PARIS else datetime.now().astimezone()
-    nxt = now + timedelta(minutes=INTERVAL)
-    pb = pause_bounds()
-    if pb and in_pause(nxt):        # prochain passage repoussé à la fin de la pause nocturne
-        end = nxt.replace(hour=pb[1].hour, minute=pb[1].minute, second=0, microsecond=0)
-        nxt = end if end >= nxt else end + timedelta(days=1)
+    cron = cron_releves()
+    nxt = cron_time(cron, now + timedelta(minutes=1), 1) if cron else None
+    if not nxt:
+        nxt = now + timedelta(minutes=INTERVAL)
+        pb = pause_bounds()
+        if pb and in_pause(nxt):        # prochain passage repoussé à la fin de la pause nocturne
+            end = nxt.replace(hour=pb[1].hour, minute=pb[1].minute, second=0, microsecond=0)
+            nxt = end if end >= nxt else end + timedelta(days=1)
     chk = history.verify(OUT / "historique")
     try:
         ver = subprocess.run(["git", "-C", str(HERE), "log", "-1", "--format=%h %cd", "--date=format:%d/%m/%Y"],
@@ -386,8 +552,9 @@ def bot_status(res, prev):
             "lastOk": now.astimezone(timezone.utc).isoformat() if ok else prev.get("last_ok"),
             "nextRun": nxt.astimezone(timezone.utc).isoformat(),
             # au-delà de cette heure sans nouveau passage, la page signale que le bot semble arrêté
-            "staleAfter": (nxt + timedelta(minutes=INTERVAL + 15)).astimezone(timezone.utc).isoformat(),
-            "intervalMin": INTERVAL, "pause": os.environ.get("PADEL_PAUSE", "00:00-07:00").strip(),
+            "staleAfter": (nxt + timedelta(minutes=35 if cron else INTERVAL + 15)).astimezone(timezone.utc).isoformat(),
+            "intervalMin": INTERVAL, "planning": planning_text(cron) if cron else None,
+            "pause": "" if cron else os.environ.get("PADEL_PAUSE", "00:00-07:00").strip(),
             "host": os.uname().nodename if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", ""),
             "historyEvents": sum(n for _, n, _, _ in chk), "historyIntact": all(o for _, _, o, _ in chk),
             "details": res.get("detailsRead"), "dwr": res.get("dwr"), "version": ver}
@@ -517,6 +684,7 @@ def run_once():
                 log(f"Historique importé : {res.get('imported', 0)} éléments")
             if res.get("ok"):
                 save_cookies(ctx)        # garde la session à jour pour le passage suivant
+                (DATA / "keepalive.txt").write_text(datetime.now().isoformat(), encoding="utf-8")
         finally:
             ctx.close()
     archive(res, imported, prev)
@@ -534,7 +702,7 @@ def run_once():
             notify("Bot padel : session ADOC expirée",
                    "Lancez « python padel_bot.py --login » et reconnectez-vous à ADOC.")
     now = datetime.now(timezone.utc).isoformat()
-    STATUS.write_text(json.dumps({"at": now, "ok": res.get("ok"), "error": res.get("error"),
+    STATUS.write_text(json.dumps({"at": now, "releve_at": now, "ok": res.get("ok"), "error": res.get("error"),
                                   "last_ok": now if res.get("ok") else prev.get("last_ok")}), encoding="utf-8")
     return 0 if res.get("ok") else 2   # 0x2 dans le Planificateur = session à reconnecter
 
@@ -602,25 +770,38 @@ def login():
 
 
 if __name__ == "__main__":
+    args, code = sys.argv[1:], 1
+    if "--test-alerte" in args:
+        ok = send_mail("Test d'alerte", "Ceci est un test : les alertes du bot padel arrivent bien.")
+        print("E-mail de test envoyé." if ok else "Échec de l'envoi : voir bot.log (PADEL_ALERTE_EMAIL / PADEL_SMTP_PASSWORD dans .env).")
+        sys.exit(0 if ok else 1)
     try:
-        if "--login" in sys.argv:
-            sys.exit(login())
-        elif "--verifier" in sys.argv:
+        if "--login" in args:
+            code = login()
+        elif "--verifier" in args:
             sys.exit(verify_history())
-        elif "--forcer" in sys.argv:
-            sys.exit(run_once())
+        elif "--releve" in args or "--forcer" in args:
+            code = run_once()
+        elif "--entretien" in args:
+            code = keepalive()
+        # sans option (Planificateur Windows) : ancien planning interne PADEL_INTERVALLE / PADEL_PAUSE
         elif in_pause():
-            # pause nocturne : pas de relevé, seulement l'entretien de la session
             keep = os.environ.get("PADEL_PAUSE_KEEPALIVE", "oui").strip().lower() not in ("non", "no", "0", "off")
-            sys.exit(keepalive() if keep else 0)
+            code = keepalive() if keep else 0
         elif scan_due():
-            sys.exit(run_once())
+            code = run_once()
         else:
-            sys.exit(keepalive())   # entre deux relevés : on garde la session vivante
-    except SystemExit:
-        raise
+            code = keepalive()
     except Exception:
-        log("ERREUR\n" + traceback.format_exc())
-        sys.exit(1)
+        tb = traceback.format_exc()
+        log("ERREUR\n" + tb)
+        alert("erreur", True, "Erreur du bot", "Le bot s'est arrêté sur une erreur :\n\n" + tb[-2000:])
     finally:
         publish_log()
+    try:
+        if code == 0:
+            alert("erreur", False)
+        health_check()
+    except Exception:
+        log("Contrôle de santé impossible\n" + traceback.format_exc())
+    sys.exit(code)

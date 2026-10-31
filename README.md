@@ -87,9 +87,9 @@ Le bot ne stocke **aucun mot de passe**.
 
 Une fréquence de 15 à 30 minutes maintient les sessions actives plus longtemps.
 
-**Durée de la session ADOC** : le serveur ADOC ferme une session restée environ 30 minutes sans activité, et la reconnexion automatique par la FFT est bloquée pour un navigateur piloté. Le bot est donc lancé **toutes les 10 minutes** : il fait un relevé complet toutes les `PADEL_INTERVALLE` minutes (30 par défaut) et, entre deux relevés, une simple visite de la page d'accueil ADOC (sans navigateur, quelques Ko) qui garde la session vivante. Si la session est malgré tout perdue, `bot.log` indique sur quelle page la reconnexion a échoué, et le rapport passe en « session expirée ».
+**Durée de la session ADOC** : le serveur ADOC ferme une session restée environ 30 minutes sans activité, et la reconnexion automatique par la FFT est bloquée pour un navigateur piloté. Sous Linux, **le planning est entièrement dans cron** (`crontab -l` pour le voir, `crontab -e` pour le changer) : un relevé complet (`--releve`) toutes les 20 minutes de 7h à 1h et une seule fois la nuit à 3h30, et, jour et nuit, une simple visite de la page d'accueil ADOC (`--entretien`, sans navigateur, quelques Ko) toutes les 7 minutes plus 0 à 2 minutes tirées au hasard (5 à 9 minutes environ), qui garde la session vivante sans rythme trop régulier. Les relevés partent aussi avec 0 à 90 secondes de décalage aléatoire. Le rapport lit la crontab pour afficher le prochain relevé. Si la session est malgré tout perdue, `bot.log` indique sur quelle page la reconnexion a échoué, et le rapport passe en « session expirée ».
 
-**Pause nocturne** : de minuit à 7h (réglable avec `PADEL_PAUSE`), le bot ne relève pas les réservations ; il continue seulement la visite d'entretien toutes les 10 minutes, pour ne pas devoir se reconnecter chaque matin. Cette visite se désactive avec `PADEL_PAUSE_KEEPALIVE=non`. Les changements faits pendant la nuit sont détectés au premier relevé du matin ; une annulation de nuit est alors datée entre le dernier relevé de la veille et celui du matin.
+**Pause nocturne (Windows seulement)** : de minuit à 7h (réglable avec `PADEL_PAUSE`), le bot ne relève pas les réservations ; il continue seulement la visite d'entretien toutes les 10 minutes, pour ne pas devoir se reconnecter chaque matin. Cette visite se désactive avec `PADEL_PAUSE_KEEPALIVE=non`. Les changements faits pendant la nuit sont détectés au premier relevé du matin ; une annulation de nuit est alors datée entre le dernier relevé de la veille et celui du matin.
 
 ## Configuration
 
@@ -103,11 +103,14 @@ cp .env.example .env
 |---|---|---|
 | `PADEL_OUT` | dossier des résultats (par exemple un dossier Google Drive) | `resultats/` dans le projet |
 | `PADEL_HISTORY_YEARS` | conservation de l'historique permanent, en années | `3` |
-| `PADEL_PAUSE` | pause nocturne, sans aucun passage (`HH:MM-HH:MM`, peut chevaucher minuit ; `non` pour désactiver) | `00:00-07:00` |
-| `PADEL_PAUSE_KEEPALIVE` | visite d'entretien de la session pendant la pause nocturne | `oui` |
+| `PADEL_ALERTE_EMAIL` | adresse qui reçoit les alertes e-mail (voir « Alertes par e-mail ») | aucune |
+| `PADEL_SMTP_PASSWORD` | mot de passe d'application Gmail du compte d'envoi | aucun |
+| `PADEL_ALERTE_RAPPEL_H` | rappel tant que le problème dure, en heures | `6` |
+| `PADEL_PAUSE` | (Windows) pause nocturne, sans aucun passage (`HH:MM-HH:MM`, peut chevaucher minuit ; `non` pour désactiver) | `00:00-07:00` |
+| `PADEL_PAUSE_KEEPALIVE` | (Windows) visite d'entretien de la session pendant la pause nocturne | `oui` |
 | `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
 | `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |
-| `PADEL_INTERVALLE` | minutes entre deux passages, pour afficher le prochain passage et détecter un bot arrêté (écrit par `install-linux.sh`) | `30` |
+| `PADEL_INTERVALLE` | (Windows) minutes entre deux relevés, à accorder avec le Planificateur | `30` |
 
 Le fichier `.env` est propre à chaque machine et n'est jamais envoyé sur GitHub.
 
@@ -157,10 +160,12 @@ Les résultats contiennent des noms d'adhérents.
 
 ```bash
 git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
-./install-linux.sh 30          # Python, Playwright/Chromium ; cron toutes les 10 min, relevé toutes les 30 min
+./install-linux.sh             # Python, Playwright/Chromium ; tâches cron des relevés et de l'entretien de session
 ```
 
 Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.
+
+**Alertes par e-mail** : le bot envoie un e-mail quand la session ADOC est perdue (avec la marche à suivre), quand les relevés ou les entretiens de session ne tournent plus à l'heure prévue, quand la tâche cron des relevés a disparu, quand un relevé échoue ou quand le bot plante. Un rappel part toutes les 6 heures tant que le problème dure, puis un e-mail « Rétabli ». Les e-mails ne contiennent aucun nom d'adhérent. Réglage dans `.env` (jamais sur GitHub) : `PADEL_ALERTE_EMAIL` et `PADEL_SMTP_PASSWORD`, un [mot de passe d'application Gmail](https://myaccount.google.com/apppasswords). Test : `.venv/bin/python padel_bot.py --test-alerte`. Limite : ces contrôles tournent sur le Beelink, donc rien ne part s'il est éteint ou si la crontab est vidée en entier ; le rapport le signale alors en rouge.
 
 **Connexion ADOC** : sur le bureau du serveur (sur son écran ou par bureau à distance, y compris depuis un téléphone), double-cliquer sur **« Reconnecter le bot ADOC »** (créé par `install-linux.sh` ; sinon `./reconnexion-adoc.sh`). Une fenêtre Chromium normale s'ouvre : on s'y connecte jusqu'à l'accueil ADOC. Le bot détecte la connexion tout seul, ferme la fenêtre, puis fait un relevé de contrôle. Pendant ce temps, la tâche cron attend : elle ne peut pas fermer la fenêtre de connexion.
 
@@ -186,7 +191,7 @@ Le dossier des résultats est alors servi par Tailscale, **uniquement aux appare
 - Portable ou téléphone : installer l'application Tailscale, se connecter avec le même compte, puis ouvrir `http://fab-beelink/` (le nom de la machine dans Tailscale). Sur le téléphone, « Ajouter à l'écran d'accueil ».
 - La page se recharge toutes les 5 minutes. Le bloc **État du bot** donne : actif, en pause nocturne ou arrêté, dernier passage, dernier passage réussi, prochain passage, nombre de cas suspects, fiches lues, intégrité de l'historique et version.
 - Si aucun passage n'a eu lieu à l'heure prévue (Beelink éteint, cron arrêté), la page affiche en rouge « Le bot ne tourne plus », même si elle est vieille.
-- Le lien **Journal technique** (`bot-log.txt`, sans noms d'adhérents, plus récent en haut) montre chaque passage, y compris les entretiens de session toutes les 10 minutes.
+- Le lien **Journal technique** (`bot-log.txt`, sans noms d'adhérents, plus récent en haut) montre chaque passage, y compris les entretiens de session qui échouent et les alertes envoyées.
 - Les CSV restent téléchargeables depuis la même adresse (`http://fab-beelink/padel-historique-cas-suspects.csv`, etc.).
 
 Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni styles ni script), et les noms des adhérents seraient stockés chez un tiers. Dropbox reste une bonne cible pour la **sauvegarde** de l'historique.

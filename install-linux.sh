@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Installation du bot padel sous Linux (Linux Mint / Ubuntu / Debian)
-# Usage : ./install-linux.sh [minutes]      (fréquence des relevés, 30 par défaut ; cron toutes les 10 min
-#                                           pour entretenir la session ADOC entre deux relevés)
+# Usage : ./install-linux.sh      (le planning des relevés et de l'entretien de session est posé dans cron, étape 4)
 set -euo pipefail
-MINUTES="${1:-30}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 
@@ -20,14 +18,19 @@ sudo .venv/bin/playwright install-deps chromium >/dev/null
 
 echo "3/4 Configuration..."
 touch .env
-if grep -qE '^\s*PADEL_INTERVALLE=' .env; then sed -i "s/^\s*PADEL_INTERVALLE=.*/PADEL_INTERVALLE=$MINUTES/" .env
-else echo "PADEL_INTERVALLE=$MINUTES" >> .env; fi
-if [ -f .env ]; then grep -E '^\s*PADEL_' .env | sed 's/^/   /' || true
-else echo "   Résultats dans : $HERE/resultats (modifiable via .env, voir .env.example)"; fi
+grep -E '^\s*PADEL_' .env | grep -v PASSWORD | sed 's/^/   /' || true
+grep -qE '^\s*PADEL_ALERTE_EMAIL=' .env || echo "   Alertes e-mail non configurées (PADEL_ALERTE_EMAIL, PADEL_SMTP_PASSWORD : voir .env.example)"
 
-echo "4/4 Tâche planifiée (cron toutes les 10 min : relevé toutes les $MINUTES min, entretien de session sinon)..."
-LINE="*/10 * * * * cd $HERE && /usr/bin/flock -n /tmp/padel-bot.lock .venv/bin/python padel_bot.py >/dev/null 2>&1"
-( crontab -l 2>/dev/null | grep -v 'padel_bot.py' ; echo "$LINE" ) | crontab -
+echo "4/4 Tâches planifiées (cron est la seule source du planning ; à modifier ensuite avec crontab -e)..."
+# Relevés : toutes les 20 min de 7h à 1h, une seule fois la nuit à 3h30 (heure de la machine, Europe/Paris).
+# Entretien de la session ADOC : toutes les 7 min + 0 à 2 min au hasard (soit 5 à 9 min environ), jour et nuit.
+RUN="cd $HERE && /usr/bin/flock"
+PY=".venv/bin/python padel_bot.py"
+CRON="# Bot padel : relevés (jour toutes les 20 min, nuit 3h30) et entretien de session (5 à 9 min)
+*/20 0,7-23 * * * sleep \$(shuf -i 0-90 -n 1); $RUN -w 600 /tmp/padel-bot.lock $PY --releve >/dev/null 2>&1
+30 3 * * * sleep \$(shuf -i 0-90 -n 1); $RUN -w 600 /tmp/padel-bot.lock $PY --releve >/dev/null 2>&1
+*/7 * * * * sleep \$(shuf -i 0-120 -n 1); $RUN -n /tmp/padel-bot.lock $PY --entretien >/dev/null 2>&1"
+( crontab -l 2>/dev/null | grep -v -e 'padel_bot.py' -e '^# Bot padel' ; echo "$CRON" ) | crontab -
 crontab -l | grep padel_bot.py | sed 's/^/   /'
 
 # Raccourci « Reconnecter ADOC » sur le bureau (utilisable aussi par bureau à distance depuis un téléphone)

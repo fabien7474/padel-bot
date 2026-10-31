@@ -124,7 +124,8 @@ def _status(st, res, n7, n90, tz):
              ("Dernier passage", _dt(st["lastRun"], tz)),
              ("Dernier passage réussi", _dt(st.get("lastOk"), tz) or "jamais"),
              ("Prochain passage prévu", _dt(st["nextRun"], tz)),
-             ("Fréquence", f'toutes les {st["intervalMin"]} min' + (f', pause {escape(st["pause"])}' if st.get("pause") else "")),
+             ("Fréquence", escape(st["planning"]) if st.get("planning") else
+              f'toutes les {st["intervalMin"]} min' + (f', pause {escape(st["pause"])}' if st.get("pause") else "")),
              ("Cas suspects", f'{n7} sur 7 j · {n90} sur 90 j'),
              ("Fiches détaillées", fiches),
              ("Historique permanent", hist),
@@ -132,7 +133,7 @@ def _status(st, res, n7, n90, tz):
              ("Version", escape(st.get("version") or ""))]
     dl = "".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in items)
     return (f'<section class="card"><h2>État du bot</h2><dl class="st">{dl}</dl>'
-            f'<p class="note" style="margin:10px 0 0"><a href="bot-log.txt">Journal technique</a> (mis à jour toutes les 10 min, '
+            f'<p class="note" style="margin:10px 0 0"><a href="bot-log.txt">Journal technique</a> (mis à jour à chaque passage, '
             f'plus récent en haut)</p></section>')
 
 
