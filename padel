@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Commande « padel » (lien installé dans ~/.local/bin par install-linux.sh). « padel » seul : liste des commandes.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/.venv/bin/python" "$HERE/padel_cli.py" "$@"

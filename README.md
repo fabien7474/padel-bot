@@ -166,18 +166,25 @@ git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
 
 Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.
 
-| Action | Commande (dans `~/padel-bot`) |
+**Commande `padel`** (installée par `install-linux.sh` dans `~/.local/bin`) : les opérations courantes, depuis n'importe quel dossier. `padel` seul affiche l'aide.
+
+| Commande | Rôle |
 |---|---|
-| Mettre à jour le bot | `git pull` |
-| Voir le planning | `crontab -l` |
-| Changer le planning | `crontab -e` (ou relancer `./install-linux.sh` pour revenir au planning par défaut) |
-| Lancer un relevé à la main | `.venv/bin/python padel_bot.py --releve; echo $?` |
-| Lancer un entretien de session à la main | `.venv/bin/python padel_bot.py --entretien; echo $?` |
-| Se reconnecter à ADOC | double-clic sur « Reconnecter le bot ADOC », ou `./reconnexion-adoc.sh` |
-| Tester les alertes e-mail | `.venv/bin/python padel_bot.py --test-alerte` |
-| Vérifier l'intégrité de l'historique | `.venv/bin/python padel_bot.py --verifier` |
-| Ouvrir le rapport | `xdg-open resultats/padel-rapport.html` |
-| Voir le journal technique | `tail -20 bot.log` |
+| `padel statut` | état du bot : connexion ADOC, derniers relevés, dernier contact ADOC, prochain relevé, planning, alertes en cours, e-mail et surveillance externe configurés |
+| `padel reconnecter` | se reconnecter à ADOC (depuis le bureau du Beelink, sur place ou par bureau à distance) |
+| `padel releve` | relevé immédiat (attend la fin d'un passage en cours) |
+| `padel entretien` | visite d'entretien de la session ADOC |
+| `padel cas [-j JOURS]` | cas suspects détaillés (7 derniers jours par défaut, 90 au plus) |
+| `padel annulations [-j JOURS]` | annulations (7 jours par défaut, 14 au plus) |
+| `padel reservations [JOUR]` | réservations suivies : aujourd'hui par défaut, `demain`, `tout`, `AAAA-MM-JJ` ou `JJ/MM` |
+| `padel planning` | planning cron et prochains relevés |
+| `padel journal [-n N] [-f]` | journal technique, erreurs en rouge (`-f` : suivre en direct) |
+| `padel rapport` | ouvre le rapport HTML |
+| `padel alerte-test` | envoie un e-mail de test |
+| `padel verifier` | intégrité de l'historique permanent |
+| `padel maj` | mise à jour du bot (`git pull` + dépendances) |
+
+Le planning se change avec `crontab -e` (ou en relançant `./install-linux.sh` pour revenir au planning par défaut).
 
 Attention à `crontab <fichier>` : la commande **remplace** toute la crontab par le contenu du fichier, et un fichier vide efface les tâches du bot. Pour sauvegarder puis restaurer : `crontab -l > ~/cron.bak` puis `crontab ~/cron.bak`, après avoir vérifié que `~/cron.bak` n'est pas vide.
 
@@ -223,7 +230,8 @@ Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni style
 | `report.py` | rapport HTML autonome |
 | `history.py` | historique permanent chaîné |
 | `install-windows.ps1` | installation et tâche planifiée Windows |
-| `install-linux.sh` | installation et tâche cron Linux |
+| `install-linux.sh` | installation, tâches cron et commande `padel` sous Linux |
+| `padel`, `padel_cli.py` | commande `padel` (Linux) |
 | `publier-rapport.sh` | rapport consultable à distance via Tailscale |
 | `reconnexion-adoc.sh` | reconnexion à ADOC (raccourci de bureau « Reconnecter le bot ADOC ») |
 | `connexion-adoc.cmd`, `test-passage.cmd`, `mettre-a-jour.cmd` | raccourcis double-clic |

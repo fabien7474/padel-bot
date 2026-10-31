@@ -33,6 +33,11 @@ CRON="# Bot padel : relevés (jour toutes les 20 min, nuit 3h30) et entretien de
 ( crontab -l 2>/dev/null | grep -v -e 'padel_bot.py' -e '^# Bot padel' ; echo "$CRON" ) | crontab -
 crontab -l | grep padel_bot.py | sed 's/^/   /'
 
+# Commande « padel » (padel statut, padel cas, padel reconnecter...) dans ~/.local/bin
+chmod +x "$HERE/padel"
+mkdir -p "$HOME/.local/bin" && ln -sf "$HERE/padel" "$HOME/.local/bin/padel"
+echo "   Commande « padel » installée (ouvrir un nouveau terminal si elle n'est pas trouvée)."
+
 # Raccourci « Reconnecter ADOC » sur le bureau (utilisable aussi par bureau à distance depuis un téléphone)
 DESK="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
 if [ -d "$DESK" ]; then
