@@ -105,6 +105,7 @@ cp .env.example .env
 | `PADEL_HISTORY_YEARS` | conservation de l'historique permanent, en années | `3` |
 | `PADEL_ALERTE_EMAIL` | adresse qui reçoit les alertes e-mail (voir « Alertes par e-mail ») | aucune |
 | `PADEL_SMTP_PASSWORD` | mot de passe d'application Gmail du compte d'envoi | aucun |
+| `PADEL_HEALTHCHECK_URL` | adresse de ping de la surveillance externe (healthchecks.io) | aucune |
 | `PADEL_ALERTE_RAPPEL_H` | rappel tant que le problème dure, en heures | `6` |
 | `PADEL_PAUSE` | (Windows) pause nocturne, sans aucun passage (`HH:MM-HH:MM`, peut chevaucher minuit ; `non` pour désactiver) | `00:00-07:00` |
 | `PADEL_PAUSE_KEEPALIVE` | (Windows) visite d'entretien de la session pendant la pause nocturne | `oui` |
@@ -165,7 +166,9 @@ git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
 
 Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.
 
-**Alertes par e-mail** : le bot envoie un e-mail quand la session ADOC est perdue (avec la marche à suivre), quand les relevés ou les entretiens de session ne tournent plus à l'heure prévue, quand la tâche cron des relevés a disparu, quand un relevé échoue ou quand le bot plante. Un rappel part toutes les 6 heures tant que le problème dure, puis un e-mail « Rétabli ». Les e-mails ne contiennent aucun nom d'adhérent. Réglage dans `.env` (jamais sur GitHub) : `PADEL_ALERTE_EMAIL` et `PADEL_SMTP_PASSWORD`, un [mot de passe d'application Gmail](https://myaccount.google.com/apppasswords). Test : `.venv/bin/python padel_bot.py --test-alerte`. Limite : ces contrôles tournent sur le Beelink, donc rien ne part s'il est éteint ou si la crontab est vidée en entier ; le rapport le signale alors en rouge.
+**Alertes par e-mail** : le bot envoie un e-mail quand la session ADOC est perdue (avec la marche à suivre), quand les relevés ou les entretiens de session ne tournent plus à l'heure prévue, quand la tâche cron des relevés a disparu, quand un relevé échoue ou quand le bot plante. Un rappel part toutes les 6 heures tant que le problème dure, puis un e-mail « Rétabli ». Les e-mails ne contiennent aucun nom d'adhérent. Réglage dans `.env` (jamais sur GitHub) : `PADEL_ALERTE_EMAIL` et `PADEL_SMTP_PASSWORD`, un [mot de passe d'application Gmail](https://myaccount.google.com/apppasswords). Test : `.venv/bin/python padel_bot.py --test-alerte`. Ces contrôles tournent sur le Beelink : s'il est éteint, si Internet est coupé ou si la crontab est vidée en entier, c'est la **surveillance externe** qui prévient.
+
+**Surveillance externe** : à chaque passage (toutes les 5 à 9 minutes), le bot envoie un signal de vie à un service comme [healthchecks.io](https://healthchecks.io) (gratuit). Si les signaux cessent pendant plus de 25 minutes environ, le service envoie lui-même un e-mail, puis un autre quand le bot repart. Un plantage du bot est signalé tout de suite. Réglage : créer un « check » (période 10 min, délai de grâce 15 min) et coller son adresse dans `.env` (`PADEL_HEALTHCHECK_URL`).
 
 **Connexion ADOC** : sur le bureau du serveur (sur son écran ou par bureau à distance, y compris depuis un téléphone), double-cliquer sur **« Reconnecter le bot ADOC »** (créé par `install-linux.sh` ; sinon `./reconnexion-adoc.sh`). Une fenêtre Chromium normale s'ouvre : on s'y connecte jusqu'à l'accueil ADOC. Le bot détecte la connexion tout seul, ferme la fenêtre, puis fait un relevé de contrôle. Pendant ce temps, la tâche cron attend : elle ne peut pas fermer la fenêtre de connexion.
 

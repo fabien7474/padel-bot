@@ -148,6 +148,19 @@ def alert(kind, active, subject="", body=""):
     ALERTS.write_text(json.dumps(state), encoding="utf-8")
 
 
+def ping_external(code):
+    """Signal de vie pour une surveillance externe (healthchecks.io ou compatible) : si les signaux cessent
+    (Beelink éteint, Internet coupé, cron vidé), c'est le service externe qui prévient. Adresse dans .env."""
+    import urllib.request
+    url = os.environ.get("PADEL_HEALTHCHECK_URL", "").strip().rstrip("/")
+    if not url:
+        return
+    try:
+        urllib.request.urlopen(url + ("/fail" if code == 1 else ""), timeout=10).read()
+    except Exception as e:
+        log(f"Surveillance externe injoignable ({e})")
+
+
 def close_profile_browsers():
     """Ferme les navigateurs restés ouverts sur le profil du bot (sinon le lancement suivant échoue).
     Ne touche pas aux autres fenêtres Edge/Chrome de l'utilisateur."""
@@ -804,4 +817,5 @@ if __name__ == "__main__":
         health_check()
     except Exception:
         log("Contrôle de santé impossible\n" + traceback.format_exc())
+    ping_external(code)   # 1 = plantage : signalé comme échec ; 0 ou 2 (session) : le bot tourne
     sys.exit(code)
