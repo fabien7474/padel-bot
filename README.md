@@ -221,6 +221,28 @@ Le dossier des résultats est alors servi par Tailscale, **uniquement aux appare
 
 Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni styles ni script), et les noms des adhérents seraient stockés chez un tiers. Dropbox reste une bonne cible pour la **sauvegarde** de l'historique.
 
+### Demander les disponibilités à Claude (même à la voix)
+
+Le connecteur `padel_mcp.py` permet de demander à Claude, depuis l'application (iPhone compris, aussi en mode vocal) :
+« Quelles pistes de padel sont libres mercredi à 18h45 ? », « Quels créneaux libres demain ? », « Est-ce que le bot padel tourne ? ».
+
+- Il lit **en direct** le « Tableau de réservation » d'ADOC avec la session du bot (navigateur séparé, environ 5 secondes par question).
+- Il ne renvoie que des pistes, des horaires et des types d'occupation (réservé, en ligne, cours, entretien, tournoi) : **aucun nom ni e-mail**.
+- Les 5 pistes (Padel 1 à 5) ont des créneaux de 1h15, de 7h30 à 22h30.
+
+Installation sur le Beelink :
+
+```bash
+cd ~/padel-bot && git pull
+./install-mcp.sh
+```
+
+Le script installe un service permanent (`systemctl --user status padel-mcp`), crée une clé secrète dans `.env` et ouvre l'accès HTTPS par **Tailscale Funnel**. Au premier lancement, Tailscale peut afficher un lien pour autoriser Funnel sur votre réseau. À la fin, il affiche l'adresse `https://fab-beelink.….ts.net/<clé>/mcp`.
+
+Dans Claude (sur claude.ai, depuis un ordinateur) : **Customize → Connectors → + Add → custom connector**. Donnez un nom (« Padel »), collez l'adresse et choisissez **No sign in** (la clé est dans l'adresse). Dans une conversation, activez-le avec **+ → Connectors**. L'adresse vaut mot de passe : ne la partagez pas. Pour changer la clé, supprimez la ligne `PADEL_MCP_TOKEN` de `.env` et relancez `./install-mcp.sh`. `./install-mcp.sh arret` coupe tout.
+
+Test sans Claude : `.venv/bin/python dispo.py mercredi 18h45`.
+
 ## Structure
 
 | Fichier | Rôle |
@@ -233,6 +255,7 @@ Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni style
 | `install-linux.sh` | installation, tâches cron et commande `padel` sous Linux |
 | `padel`, `padel_cli.py` | commande `padel` (Linux) |
 | `publier-rapport.sh` | rapport consultable à distance via Tailscale |
+| `dispo.py`, `padel_mcp.py`, `install-mcp.sh` | disponibilités des pistes en direct et connecteur Claude |
 | `reconnexion-adoc.sh` | reconnexion à ADOC (raccourci de bureau « Reconnecter le bot ADOC ») |
 | `connexion-adoc.cmd`, `test-passage.cmd`, `mettre-a-jour.cmd` | raccourcis double-clic |
 | `.env.example` | modèle de configuration |
