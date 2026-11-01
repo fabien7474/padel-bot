@@ -37,59 +37,27 @@ Pour chaque nouvelle réservation, et après chaque modification, le bot lit la 
 
 Si la fiche n'est pas disponible, le bot se rabat sur l'indicateur « ticket » de la liste et sur les marqueurs `*`.
 
-## Installation (Windows, Git Bash)
+## Installation (Beelink, Linux)
 
-Prérequis : Git, et Edge, qui est déjà installé sous Windows. L'installateur installe Python s'il manque.
+Le bot tourne uniquement sous Linux, sur le Beelink.
 
 ```bash
-cd /c/work/github
-git clone https://github.com/fabien7474/padel-bot.git
-cd padel-bot
-powershell.exe -ExecutionPolicy Bypass -File ./install-windows.ps1 -Minutes 30
+git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
+./install-linux.sh             # Python, Playwright/Chromium ; tâches cron des relevés et de l'entretien de session
 ```
 
-L'installateur :
-
-1. crée l'environnement Python `.venv` et installe Playwright, qui utilise Edge sans rien télécharger d'autre ;
-2. crée ou met à jour la tâche planifiée **« Bot padel ADOC »**, qui tourne toutes les `-Minutes` minutes (10 par défaut) ;
-3. ouvre Edge pour la **connexion à ADOC**, sauf si une session est déjà enregistrée.
-
-Il peut être relancé sans risque, par exemple pour changer la fréquence ou après avoir déplacé le dossier : la tâche est alors remise à jour.
-
-## Utilisation au quotidien
-
-| Action | Commande (Git Bash, dans le dossier du projet) | ou double-clic |
-|---|---|---|
-| Mettre à jour le bot | `git pull` | `mettre-a-jour.cmd` (`git pull` + dépendances) |
-| Lancer un passage à la main (même pendant la pause) | `.venv/Scripts/python.exe padel_bot.py --forcer; echo $?` | `test-passage.cmd` |
-| Se reconnecter à ADOC | `.venv/Scripts/python.exe padel_bot.py --login` | `connexion-adoc.cmd` |
-| Vérifier l'intégrité de l'historique | `.venv/Scripts/python.exe padel_bot.py --verifier` | — |
-| Voir le journal technique | `tail -20 bot.log` | ouvrir `bot.log` |
-
-Si une mise à jour ajoute une dépendance, lancer aussi `.venv/Scripts/python.exe -m pip install -r requirements.txt`. `mettre-a-jour.cmd` le fait automatiquement.
-
-Codes retour, visibles dans le Planificateur de tâches comme « Résultat de la dernière exécution » :
-
-| Code | Signification | Que faire |
-|---|---|---|
-| `0x0` | passage réussi | rien |
-| `0x2` | session ADOC/FFT expirée | lancer `connexion-adoc.cmd` |
-| `0x1` | erreur technique | lire `bot.log` |
+L'installateur crée l'environnement Python `.venv`, installe Playwright et son Chromium, écrit les tâches cron, installe la commande `padel` dans `~/.local/bin` et le raccourci de bureau « Reconnecter le bot ADOC ». Il peut être relancé sans risque, par exemple pour revenir au planning par défaut.
 
 ## Connexion et captcha
 
 Le bot ne stocke **aucun mot de passe**.
 
-- `connexion-adoc.cmd` ouvre un **Edge normal**, non piloté, que la page de connexion FFT accepte. On s'y connecte soi-même, captcha compris, jusqu'à l'accueil ADOC, puis on appuie sur Entrée dans la console. Le bot récupère alors la session.
-- La session (profil Edge et cookies) est gardée dans `%LOCALAPPDATA%\padel-bot`, ou `~/.local/share/padel-bot` sous Linux, en dehors du projet et de tout dossier synchronisé.
+- `padel reconnecter` (ou `./reconnexion-adoc.sh`, ou le raccourci de bureau) ouvre un **Chromium normal**, non piloté, que la page de connexion FFT accepte. On s'y connecte soi-même, captcha compris, jusqu'à l'accueil ADOC. Le bot récupère alors la session.
+- La session (profil du navigateur et cookies) est gardée dans `~/.local/share/padel-bot`, en dehors du projet.
 - Quand la **session ADOC** expire, le bot la rouvre seul grâce à la connexion FFT, sans captcha.
-- Quand la **connexion FFT** expire, le bot ne tente pas de passer le captcha. Il affiche **une** notification Windows, enregistre l'échec avec le code `0x2`, et reprend dès qu'on s'est reconnecté.
+- Quand la **connexion FFT** expire, le bot ne tente pas de passer le captcha. Il envoie une alerte (e-mail, notification de bureau), se termine avec le code `2`, et reprend dès qu'on s'est reconnecté.
 
-Une fréquence de 15 à 30 minutes maintient les sessions actives plus longtemps.
-
-**Durée de la session ADOC** : le serveur ADOC ferme une session restée environ 30 minutes sans activité, et la reconnexion automatique par la FFT est bloquée pour un navigateur piloté. Sous Linux, **le planning est entièrement dans cron** (`crontab -l` pour le voir, `crontab -e` pour le changer) : un relevé complet (`--releve`) toutes les 20 minutes de 7h à 1h et une seule fois la nuit à 3h30, et, jour et nuit, une simple visite de la page d'accueil ADOC (`--entretien`, sans navigateur, quelques Ko) toutes les 7 minutes plus 0 à 2 minutes tirées au hasard (5 à 9 minutes environ), qui garde la session vivante sans rythme trop régulier. Les relevés partent aussi avec 0 à 90 secondes de décalage aléatoire. Le rapport lit la crontab pour afficher le prochain relevé. Si la session est malgré tout perdue, `bot.log` indique sur quelle page la reconnexion a échoué, et le rapport passe en « session expirée ».
-
-**Pause nocturne (Windows seulement)** : de minuit à 7h (réglable avec `PADEL_PAUSE`), le bot ne relève pas les réservations ; il continue seulement la visite d'entretien toutes les 10 minutes, pour ne pas devoir se reconnecter chaque matin. Cette visite se désactive avec `PADEL_PAUSE_KEEPALIVE=non`. Les changements faits pendant la nuit sont détectés au premier relevé du matin ; une annulation de nuit est alors datée entre le dernier relevé de la veille et celui du matin.
+**Durée de la session ADOC** : le serveur ADOC ferme une session restée environ 30 minutes sans activité, et la reconnexion automatique par la FFT est bloquée pour un navigateur piloté. **Le planning est entièrement dans cron** (`crontab -l` pour le voir, `crontab -e` pour le changer) : un relevé complet (`--releve`) toutes les 20 minutes de 7h à 1h et une seule fois la nuit à 3h30, et, jour et nuit, une simple visite de la page d'accueil ADOC (`--entretien`, sans navigateur, quelques Ko) toutes les 7 minutes plus 0 à 2 minutes tirées au hasard (5 à 9 minutes environ), qui garde la session vivante sans rythme trop régulier. Les relevés partent aussi avec 0 à 90 secondes de décalage aléatoire. Le rapport lit la crontab pour afficher le prochain relevé. Si la session est malgré tout perdue, `bot.log` indique sur quelle page la reconnexion a échoué, et le rapport passe en « session expirée ».
 
 ## Configuration
 
@@ -107,11 +75,7 @@ cp .env.example .env
 | `PADEL_SMTP_PASSWORD` | mot de passe d'application Gmail du compte d'envoi | aucun |
 | `PADEL_HEALTHCHECK_URL` | adresse de ping de la surveillance externe (healthchecks.io) | aucune |
 | `PADEL_ALERTE_RAPPEL_H` | rappel tant que le problème dure, en heures | `6` |
-| `PADEL_PAUSE` | (Windows) pause nocturne, sans aucun passage (`HH:MM-HH:MM`, peut chevaucher minuit ; `non` pour désactiver) | `00:00-07:00` |
-| `PADEL_PAUSE_KEEPALIVE` | (Windows) visite d'entretien de la session pendant la pause nocturne | `oui` |
-| `PADEL_CHANNEL` | navigateur sous Windows : `msedge` ou `chrome` (relancer `connexion-adoc.cmd` après un changement) | `msedge` |
 | `PADEL_MAX_DETAILS` | fiches de réservation lues par passage | `60` |
-| `PADEL_INTERVALLE` | (Windows) minutes entre deux relevés, à accorder avec le Planificateur | `30` |
 
 Le fichier `.env` est propre à chaque machine et n'est jamais envoyé sur GitHub.
 
@@ -157,12 +121,7 @@ Les résultats contiennent des noms d'adhérents.
 - Les vues récentes sont conservées 7, 14 ou 90 jours (durées définies dans `monitor.js`). L'historique permanent est conservé `PADEL_HISTORY_YEARS` ans, puis supprimé année par année.
 - Le bureau doit fixer cette durée en fonction de la finalité (justification des avertissements et sanctions), l'inscrire au **registre des traitements** et annoncer ce contrôle dans le **règlement intérieur**.
 
-## Linux (mini-PC, serveur)
-
-```bash
-git clone https://github.com/fabien7474/padel-bot.git && cd padel-bot
-./install-linux.sh             # Python, Playwright/Chromium ; tâches cron des relevés et de l'entretien de session
-```
+## Utilisation au quotidien
 
 Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications passent par `notify-send`, et ne s'affichent que si une session graphique est ouverte.
 
@@ -197,15 +156,6 @@ Attention à `crontab <fichier>` : la commande **remplace** toute la crontab par
 
 **Connexion ADOC** : sur le bureau du serveur (sur son écran ou par bureau à distance, y compris depuis un téléphone), double-cliquer sur **« Reconnecter le bot ADOC »** (créé par `install-linux.sh` ; sinon `./reconnexion-adoc.sh`). Une fenêtre Chromium normale s'ouvre : on s'y connecte jusqu'à l'accueil ADOC. Le bot détecte la connexion tout seul, ferme la fenêtre, puis fait un relevé de contrôle. Pendant ce temps, la tâche cron attend : elle ne peut pas fermer la fenêtre de connexion.
 
-**Reprendre la session et l'historique d'une autre machine**, par exemple d'un portable Windows (Git Bash, depuis le portable) :
-
-```bash
-scp -r /c/work/github/padel-bot/resultats  utilisateur@serveur:~/padel-bot/
-scp /c/Users/<moi>/AppData/Local/padel-bot/session.json  utilisateur@serveur:~/.local/share/padel-bot/
-```
-
-Arrêter le bot de l'ancienne machine **avant** la copie : sinon deux historiques divergent. La mémoire de travail du bot (les réservations en cours) repart de zéro, et les comparaisons reprennent dès le deuxième passage.
-
 ### Consulter le rapport depuis le portable ou le téléphone
 
 Sur le serveur, une seule fois :
@@ -217,7 +167,7 @@ cd ~/padel-bot && ./publier-rapport.sh
 Le dossier des résultats est alors servi par Tailscale, **uniquement aux appareils de votre réseau Tailscale** : rien n'est publié sur Internet, et le trafic est chiffré par Tailscale. Ça survit aux redémarrages ; `./publier-rapport.sh arret` le désactive.
 
 - Portable ou téléphone : installer l'application Tailscale, se connecter avec le même compte, puis ouvrir `http://fab-beelink/` (le nom de la machine dans Tailscale). Sur le téléphone, « Ajouter à l'écran d'accueil ».
-- La page se recharge toutes les 5 minutes. Le bloc **État du bot** donne : actif ou arrêté (et, sous Windows, en pause nocturne), dernier passage, dernier passage réussi, prochain relevé, planning des relevés lu dans cron, nombre de cas suspects, fiches lues, intégrité de l'historique et version.
+- La page se recharge toutes les 5 minutes. Le bloc **État du bot** donne : actif ou arrêté, dernier passage, dernier passage réussi, prochain relevé, planning des relevés lu dans cron, nombre de cas suspects, fiches lues, intégrité de l'historique et version.
 - Si aucun passage n'a eu lieu à l'heure prévue (Beelink éteint, cron arrêté), la page affiche en rouge « Le bot ne tourne plus », même si elle est vieille.
 - Le lien **Journal technique** (`bot-log.txt`, sans noms d'adhérents, plus récent en haut) montre chaque passage, y compris les entretiens de session qui échouent et les alertes envoyées.
 - Les CSV restent téléchargeables depuis la même adresse (`http://fab-beelink/padel-historique-cas-suspects.csv`, etc.).
@@ -256,12 +206,10 @@ Test sans Claude : `.venv/bin/python dispo.py mercredi 18h45`.
 | `padel_bot.py` | navigateur, session, exports CSV/JSON, notifications, commandes `--login` et `--verifier` |
 | `report.py` | rapport HTML autonome |
 | `history.py` | historique permanent chaîné |
-| `install-windows.ps1` | installation et tâche planifiée Windows |
-| `install-linux.sh` | installation, tâches cron et commande `padel` sous Linux |
-| `padel`, `padel_cli.py` | commande `padel` (Linux) |
+| `install-linux.sh` | installation, tâches cron et commande `padel` |
+| `padel`, `padel_cli.py` | commande `padel` |
 | `adherents.py` | liste des adhérents padel (export ADOC) et recherche `padel membre` |
 | `publier-rapport.sh` | rapport consultable à distance via Tailscale |
 | `dispo.py`, `padel_mcp.py`, `install-mcp.sh` | disponibilités des pistes en direct et connecteur Claude |
 | `reconnexion-adoc.sh` | reconnexion à ADOC (raccourci de bureau « Reconnecter le bot ADOC ») |
-| `connexion-adoc.cmd`, `test-passage.cmd`, `mettre-a-jour.cmd` | raccourcis double-clic |
 | `.env.example` | modèle de configuration |

@@ -43,8 +43,8 @@ def build(res, alerts, cancels, runs, resas, tz, status=None):
     n_guest = sum(1 for r in resas if any(p.strip().lower().startswith("invit") or p.strip().endswith("*") for p in r["players"]))
 
     if not ok:
-        msg = ("La session ADOC a expiré : reconnectez le bot (<b>connexion-adoc.cmd</b> sous Windows, "
-               "<b>padel_bot.py --login</b> sur le bureau du Beelink).<br><small>Le bot ne surveille plus rien tant que ce n'est pas fait.</small>"
+        msg = ("La session ADOC a expiré : reconnectez le bot (<b>./reconnexion-adoc.sh</b> "
+               "sur le bureau du Beelink).<br><small>Le bot ne surveille plus rien tant que ce n'est pas fait.</small>"
                if res.get("error") == "SESSION" else f"Dernier passage en échec : {escape(str(res.get('message')))}")
         banner = f'<p class="banner bad">{msg}</p>'
     elif a7:
@@ -124,8 +124,7 @@ def _status(st, res, n7, n90, tz):
              ("Dernier passage", _dt(st["lastRun"], tz)),
              ("Dernier passage réussi", _dt(st.get("lastOk"), tz) or "jamais"),
              ("Prochain passage prévu", _dt(st["nextRun"], tz)),
-             ("Fréquence", escape(st["planning"]) if st.get("planning") else
-              f'toutes les {st["intervalMin"]} min' + (f', pause {escape(st["pause"])}' if st.get("pause") else "")),
+             ("Fréquence", escape(st["planning"]) if st.get("planning") else '<span class="ko">aucun relevé dans cron</span>'),
              ("Cas suspects", f'{n7} sur 7 j · {n90} sur 90 j'),
              ("Fiches détaillées", fiches),
              ("Historique permanent", hist),
@@ -140,10 +139,8 @@ def _status(st, res, n7, n90, tz):
 def _script(st):
     """Signale à l'ouverture de la page que le bot ne tourne plus (rapport figé) ; la page se recharge toutes les 5 min."""
     import json
-    data = json.dumps({"stale": st["staleAfter"], "last": st["lastRun"], "pause": st.get("pause") or ""})
-    return """<script>(function(){var s=%s;function paris(){var p=new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());return p}
-function inPause(){if(!/^\\d\\d:\\d\\d-\\d\\d:\\d\\d$/.test(s.pause))return false;var t=paris(),a=s.pause.slice(0,5),b=s.pause.slice(6);return a<=b?(t>=a&&t<b):(t>=a||t<b)}
+    data = json.dumps({"stale": st["staleAfter"], "last": st["lastRun"]})
+    return """<script>(function(){var s=%s;
 var now=Date.now(),last=new Date(s.last),ago=Math.round((now-last)/60000),txt=ago<120?ago+' min':Math.round(ago/60)+' h';
 if(now>new Date(s.stale).getTime()){var e=document.getElementById('stale');e.hidden=false;e.innerHTML='Le bot ne tourne plus : aucun passage depuis '+txt+'. Vérifier que le Beelink est allumé (et la tâche cron).';
-document.getElementById('dot').className='dot bad';document.getElementById('state').textContent='Arrêté ? (rapport figé depuis '+txt+')'}
-else if(inPause()&&document.getElementById('state').textContent==='Actif'){document.getElementById('dot').className='dot warn';document.getElementById('state').textContent='En pause nocturne ('+s.pause+')'}})();</script>""" % data
+document.getElementById('dot').className='dot bad';document.getElementById('state').textContent='Arrêté ? (rapport figé depuis '+txt+')'}})();</script>""" % data

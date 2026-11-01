@@ -1,18 +1,16 @@
 """Bot de surveillance des réservations de padel - Annecy Tennis (ADOC).
 
 Usage :
-  python padel_bot.py --login   ouvre Edge pour vous connecter une fois à ADOC (à refaire si la session expire)
-  python padel_bot.py --releve    un relevé complet (Linux : lancé par cron, seule source du planning)
-  python padel_bot.py --entretien visite légère d'ADOC qui garde la session vivante (Linux : cron, ~toutes les 7 min)
-  python padel_bot.py --adherents copie locale des adhérents padel de la saison (Linux : cron, 2 fois par jour)
+  python padel_bot.py --login   ouvre le navigateur pour vous connecter une fois à ADOC (à refaire si la session expire)
+  python padel_bot.py --releve    un relevé complet (lancé par cron, seule source du planning)
+  python padel_bot.py --entretien visite légère d'ADOC qui garde la session vivante (cron, ~toutes les 7 min)
+  python padel_bot.py --adherents copie locale des adhérents padel de la saison (cron, 2 fois par jour)
   python padel_bot.py --verifier  contrôle que l'historique permanent n'a pas été modifié
   python padel_bot.py --forcer    relevé immédiat (identique à --releve)
   python padel_bot.py --test-alerte  envoie un e-mail de test à PADEL_ALERTE_EMAIL
-  python padel_bot.py           (Windows, Planificateur) relevé toutes les PADEL_INTERVALLE min, entretien sinon
 
-Le bot n'enregistre aucun mot de passe : il réutilise la session ouverte dans son propre profil Edge,
-rangé hors du dossier synchronisé (Windows : %LOCALAPPDATA%\\padel-bot ; Linux : ~/.local/share/padel-bot).
-Fonctionne à l'identique sous Windows (navigateur Edge) et Linux (Chromium de Playwright).
+Le bot n'enregistre aucun mot de passe : il réutilise la session ouverte dans son propre profil Chromium (Playwright),
+rangé hors du projet dans ~/.local/share/padel-bot. Linux uniquement (Beelink, planning dans cron).
 Réglages par variables d'environnement (fichier .env à côté du script) : PADEL_OUT = dossier des résultats.
 """
 import csv, json, os, subprocess, sys, traceback
@@ -28,21 +26,16 @@ if _env.exists():
             _k, _v = _l.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip().strip('"'))
 OUT = Path(os.environ.get("PADEL_OUT") or HERE / "resultats")             # où écrire les CSV/JSON
-DATA = Path(os.environ.get("PADEL_DATA") or (Path(os.environ["LOCALAPPDATA"]) / "padel-bot" if os.environ.get("LOCALAPPDATA")
-            else Path.home() / ".local" / "share" / "padel-bot"))
+DATA = Path(os.environ.get("PADEL_DATA") or Path.home() / ".local" / "share" / "padel-bot")
 PROFILE = DATA / "profil"
 LOG = HERE / "bot.log"                                                    # journal technique (sans noms)
 STATUS = DATA / "statut.json"
 HISTORY_YEARS = int(os.environ.get("PADEL_HISTORY_YEARS", "3"))         # conservation de l'historique permanent
-INTERVAL = int(os.environ.get("PADEL_INTERVALLE", "30"))                  # minutes entre deux passages (cron / Planificateur)
 COOKIES = DATA / "session.json"   # cookies de session (hors dossier synchronisé, jamais publiés)
 ADOC = os.environ.get("PADEL_ADOC", "https://adoc.app.fft.fr/adoc/")
 HOME_URL = ADOC + "accueil.do?method=read"
 SUIVI_URL = ADOC + "suiviReservations.do?method=init"   # page qui charge le service de fiches de réservation
-try:
-    PARIS = ZoneInfo("Europe/Paris")  # sous Windows, nécessite le paquet tzdata (requirements.txt)
-except Exception:
-    PARIS = None                      # à défaut : heure locale de l'ordinateur
+PARIS = ZoneInfo("Europe/Paris")
 
 
 def log(msg):
@@ -74,19 +67,11 @@ def publish_log():
 
 
 def notify(title, text):
-    """Notification Windows (bulle), sans dépendance."""
-    if os.name != "nt":
-        try:
-            subprocess.Popen(["notify-send", "-u", "critical", title, text[:250]])
-        except OSError:
-            pass
-        return
-    t, x = title.replace("'", "’"), text.replace("'", "’")[:250]
-    ps = ("[void][System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms');"
-          "$n=New-Object System.Windows.Forms.NotifyIcon;$n.Icon=[System.Drawing.SystemIcons]::Warning;"
-          f"$n.Visible=$true;$n.ShowBalloonTip(15000,'{t}','{x}','Warning');Start-Sleep -s 16;$n.Dispose()")
-    subprocess.Popen(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
-                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    """Notification de bureau (notify-send), visible seulement si une session graphique est ouverte."""
+    try:
+        subprocess.Popen(["notify-send", "-u", "critical", title, text[:250]])
+    except OSError:
+        pass
 
 
 def send_mail(subject, body):
@@ -103,7 +88,7 @@ def send_mail(subject, body):
     user = os.environ.get("PADEL_SMTP_USER", "").strip() or to
     msg = EmailMessage()
     msg["Subject"], msg["From"], msg["To"] = f"[Bot padel] {subject}", user, to
-    host = os.uname().nodename if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", "")
+    host = os.uname().nodename
     tail = LOG.read_text(encoding="utf-8").splitlines()[-15:] if LOG.exists() else []
     msg.set_content(f"{body}\n\nMachine : {host}\nHeure : {datetime.now(PARIS):%d/%m/%Y %H:%M}\n\n"
                     "Dernières lignes du journal technique :\n" + "\n".join(tail))
@@ -164,15 +149,9 @@ def ping_external(code):
 
 def close_profile_browsers():
     """Ferme les navigateurs restés ouverts sur le profil du bot (sinon le lancement suivant échoue).
-    Ne touche pas aux autres fenêtres Edge/Chrome de l'utilisateur."""
+    Ne touche pas aux autres fenêtres de navigateur de l'utilisateur."""
     try:
-        if os.name == "nt":
-            ps = ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*" + str(PROFILE).replace("'", "''")
-                  + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
-            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=30,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        else:
-            subprocess.run(["pkill", "-f", f"--user-data-dir={PROFILE}"], capture_output=True, timeout=30)
+        subprocess.run(["pkill", "-f", f"--user-data-dir={PROFILE}"], capture_output=True, timeout=30)
     except Exception as e:
         log(f"Impossible de fermer les navigateurs du profil : {e}")
 
@@ -181,23 +160,14 @@ def launch(p, headless):
     PROFILE.mkdir(parents=True, exist_ok=True)
     close_profile_browsers()
     return p.chromium.launch_persistent_context(
-        str(PROFILE), channel=os.environ.get("PADEL_CHANNEL", "msedge" if os.name == "nt" else "") or None,
+        str(PROFILE),
         headless=headless, locale="fr-FR", timezone_id="Europe/Paris",
         ignore_default_args=["--enable-automation"], args=["--disable-blink-features=AutomationControlled"])
 
 
 def browser_exe(p):
     """Chemin du navigateur à ouvrir « normalement » (sans pilotage) pour la connexion."""
-    if os.environ.get("PADEL_BROWSER"):
-        return os.environ["PADEL_BROWSER"]
-    if os.name == "nt":
-        chrome = os.environ.get("PADEL_CHANNEL", "").startswith("chrome")
-        rel = Path("Google", "Chrome", "Application", "chrome.exe") if chrome else Path("Microsoft", "Edge", "Application", "msedge.exe")
-        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), os.environ.get("LOCALAPPDATA")):
-            exe = Path(base or "") / rel
-            if base and exe.exists():
-                return str(exe)
-    return p.chromium.executable_path
+    return os.environ.get("PADEL_BROWSER") or p.chromium.executable_path
 
 
 def load_cookies(ctx):
@@ -417,29 +387,6 @@ def verify_history():
     return 0 if all(r[2] for r in res) else 3
 
 
-def pause_bounds():
-    """(début, fin) de la pause nocturne PADEL_PAUSE (par défaut 00:00-07:00), ou None si pas de pause."""
-    spec = os.environ.get("PADEL_PAUSE", "00:00-07:00").strip()
-    if not spec or spec.lower() in ("non", "aucune", "off"):
-        return None
-    try:
-        a, b = [datetime.strptime(x.strip(), "%H:%M").time() for x in spec.split("-")]
-        return a, b
-    except ValueError:
-        log(f"PADEL_PAUSE invalide ({spec}) : format attendu HH:MM-HH:MM")
-        return None
-
-
-def in_pause(now=None):
-    """Pause nocturne (PADEL_PAUSE, par défaut 00:00-07:00, heure locale). Vide ou « non » = pas de pause."""
-    pb = pause_bounds()
-    if not pb:
-        return False
-    a, b = pb
-    t = (now or (datetime.now(PARIS) if PARIS else datetime.now())).time()
-    return a <= t < b if a <= b else (t >= a or t < b)   # gère une pause à cheval sur minuit (ex. 23:00-06:00)
-
-
 def _cron_field(spec, lo, hi):
     vals = set()
     for part in spec.split(","):
@@ -456,9 +403,7 @@ def _cron_field(spec, lo, hi):
 
 
 def cron_releves():
-    """Horaires des relevés lus dans la crontab, seule source du planning sous Linux (lignes « padel_bot.py --releve »)."""
-    if os.name == "nt":
-        return []
+    """Horaires des relevés lus dans la crontab, seule source du planning (lignes « padel_bot.py --releve »)."""
     try:
         out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10).stdout
     except Exception:
@@ -516,8 +461,6 @@ def health_check():
           "« Reconnecter le bot ADOC » (ou ./reconnexion-adoc.sh), puis se connecter jusqu'à l'accueil ADOC.")
     alert("echec", st.get("ok") is False and not session, "Relevé en échec",
           f"Le dernier relevé a échoué : {st.get('error')}.")
-    if os.name == "nt":
-        return
     entries = cron_releves()
     alert("cron", not entries, "Tâche cron des relevés absente",
           "La crontab ne contient plus de ligne « padel_bot.py --releve » : aucun relevé n'est planifié.\n"
@@ -543,15 +486,9 @@ def health_check():
 def bot_status(res, prev):
     """État du bot affiché en tête du rapport et écrit dans padel-statut.json (aucun nom d'adhérent)."""
     import history
-    now = datetime.now(PARIS) if PARIS else datetime.now().astimezone()
+    now = datetime.now(PARIS)
     cron = cron_releves()
-    nxt = cron_time(cron, now + timedelta(minutes=1), 1) if cron else None
-    if not nxt:
-        nxt = now + timedelta(minutes=INTERVAL)
-        pb = pause_bounds()
-        if pb and in_pause(nxt):        # prochain passage repoussé à la fin de la pause nocturne
-            end = nxt.replace(hour=pb[1].hour, minute=pb[1].minute, second=0, microsecond=0)
-            nxt = end if end >= nxt else end + timedelta(days=1)
+    nxt = (cron_time(cron, now + timedelta(minutes=1), 1) if cron else None) or now   # sans cron : aucun relevé prévu
     chk = history.verify(OUT / "historique")
     try:
         ver = subprocess.run(["git", "-C", str(HERE), "log", "-1", "--format=%h %cd", "--date=format:%d/%m/%Y"],
@@ -566,10 +503,9 @@ def bot_status(res, prev):
             "lastOk": now.astimezone(timezone.utc).isoformat() if ok else prev.get("last_ok"),
             "nextRun": nxt.astimezone(timezone.utc).isoformat(),
             # au-delà de cette heure sans nouveau passage, la page signale que le bot semble arrêté
-            "staleAfter": (nxt + timedelta(minutes=35 if cron else INTERVAL + 15)).astimezone(timezone.utc).isoformat(),
-            "intervalMin": INTERVAL, "planning": planning_text(cron) if cron else None,
-            "pause": "" if cron else os.environ.get("PADEL_PAUSE", "00:00-07:00").strip(),
-            "host": os.uname().nodename if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", ""),
+            "staleAfter": (nxt + timedelta(minutes=35)).astimezone(timezone.utc).isoformat(),
+            "planning": planning_text(cron) if cron else None,
+            "host": os.uname().nodename,
             "historyEvents": sum(n for _, n, _, _ in chk), "historyIntact": all(o for _, _, o, _ in chk),
             "details": res.get("detailsRead"), "dwr": res.get("dwr"), "version": ver}
 
@@ -621,7 +557,7 @@ def http_keepalive():
 
 
 def keepalive():
-    """Entre deux relevés et pendant la pause nocturne : garde la session ADOC vivante, sans rien relever.
+    """Entre deux relevés : garde la session ADOC vivante, sans rien relever.
     Si elle est perdue, tente une reconnexion par la FFT ; sinon signale la session expirée dans le rapport."""
     ok = http_keepalive()
     if ok is None:
@@ -653,17 +589,6 @@ def keepalive():
         export(res, bot_status(res, prev))
         STATUS.write_text(json.dumps({**prev, "at": res["run"], "ok": False, "error": "SESSION"}), encoding="utf-8")
     return 2
-
-
-def scan_due():
-    """Vrai si le dernier relevé réussi date d'au moins PADEL_INTERVALLE minutes (marge de 3 min pour cron)."""
-    try:
-        st = json.loads(STATUS.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return True
-    if not st.get("ok"):
-        return True
-    return _days_ago(st["at"]) * 1440 >= INTERVAL - 3
 
 
 def history_seed():
@@ -727,7 +652,7 @@ def run_once():
     now = datetime.now(timezone.utc).isoformat()
     STATUS.write_text(json.dumps({"at": now, "releve_at": now, "ok": res.get("ok"), "error": res.get("error"),
                                   "last_ok": now if res.get("ok") else prev.get("last_ok")}), encoding="utf-8")
-    return 0 if res.get("ok") else 2   # 0x2 dans le Planificateur = session à reconnecter
+    return 0 if res.get("ok") else 2   # 2 = session à reconnecter
 
 
 def login():
@@ -737,12 +662,11 @@ def login():
     from playwright.sync_api import sync_playwright
     PROFILE.mkdir(parents=True, exist_ok=True)
     port = 9333
-    if os.name != "nt":   # même verrou que la tâche cron : aucun passage ne fermera la fenêtre de connexion
-        import fcntl
-        global _LOCK
-        _LOCK = open("/tmp/padel-bot.lock", "w")
-        print("Attente de la fin d'un éventuel passage du bot...")
-        fcntl.flock(_LOCK, fcntl.LOCK_EX)
+    import fcntl          # même verrou que la tâche cron : aucun passage ne fermera la fenêtre de connexion
+    global _LOCK
+    _LOCK = open("/tmp/padel-bot.lock", "w")
+    print("Attente de la fin d'un éventuel passage du bot...")
+    fcntl.flock(_LOCK, fcntl.LOCK_EX)
     with sync_playwright() as p:
         exe = browser_exe(p)
     print("Une fenêtre de navigateur va s'ouvrir : connectez-vous à ADOC avec le compte du club")
@@ -781,7 +705,7 @@ def login():
             proc.terminate()
         except Exception:
             pass
-        close_profile_browsers()   # Edge garde parfois des processus en arrière-plan
+        close_profile_browsers()   # le navigateur garde parfois des processus en arrière-plan
     print("Session enregistrée, le bot peut tourner." if ok else
           "Je ne vois pas de session ADOC ouverte : relancez et terminez bien la connexion.")
     log("Connexion manuelle : " + ("OK" if ok else "échec"))
@@ -798,6 +722,9 @@ if __name__ == "__main__":
         ok = send_mail("Test d'alerte", "Ceci est un test : les alertes du bot padel arrivent bien.")
         print("E-mail de test envoyé." if ok else "Échec de l'envoi : voir bot.log (PADEL_ALERTE_EMAIL / PADEL_SMTP_PASSWORD dans .env).")
         sys.exit(0 if ok else 1)
+    if not any(a in args for a in ("--login", "--verifier", "--adherents", "--releve", "--forcer", "--entretien")):
+        print(__doc__)
+        sys.exit(1)
     try:
         if "--login" in args:
             code = login()
@@ -809,14 +736,6 @@ if __name__ == "__main__":
         elif "--releve" in args or "--forcer" in args:
             code = run_once()
         elif "--entretien" in args:
-            code = keepalive()
-        # sans option (Planificateur Windows) : ancien planning interne PADEL_INTERVALLE / PADEL_PAUSE
-        elif in_pause():
-            keep = os.environ.get("PADEL_PAUSE_KEEPALIVE", "oui").strip().lower() not in ("non", "no", "0", "off")
-            code = keepalive() if keep else 0
-        elif scan_due():
-            code = run_once()
-        else:
             code = keepalive()
     except Exception:
         tb = traceback.format_exc()
