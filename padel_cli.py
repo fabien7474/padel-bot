@@ -7,6 +7,7 @@
   padel cas [-j JOURS]         cas suspects (7 derniers jours par défaut, 90 au plus)
   padel annulations [-j JOURS] annulations (7 derniers jours par défaut, 14 au plus)
   padel reservations [JOUR]    réservations suivies (aujourd'hui, demain, ou AAAA-MM-JJ / JJ/MM)
+  padel membre TERMES [--frais] adhérent padel ? (prénom, nom, téléphone, même partiels)
   padel planning               planning cron des relevés et de l'entretien
   padel journal [-n N] [-f]    journal technique (-f : suivre en direct)
   padel rapport                ouvre le rapport HTML
@@ -189,6 +190,52 @@ def cmd_reservations(a):
     return 0
 
 
+def cmd_membre(a):
+    import adherents as ad
+    data = ad.charger()
+    age_h = None
+    if data:
+        age_h = (datetime.now(b.PARIS) - datetime.fromisoformat(data["at"])).total_seconds() / 3600
+    if a.frais or not data or age_h > 36:
+        print(c("Téléchargement de la liste des adhérents depuis ADOC (environ 30 s)...", "gris"))
+        code = run_bot("--adherents")
+        data = ad.charger()
+        if code or not data:
+            if not data:
+                print(c("Liste des adhérents indisponible" + (" : session ADOC perdue, lancer « padel reconnecter »."
+                                                              if code == 2 else " : voir « padel journal »."), "rouge"))
+                return code or 1
+            print(c("Mise à jour impossible : recherche dans la copie précédente.", "jaune"))
+        age_h = (datetime.now(b.PARIS) - datetime.fromisoformat(data["at"])).total_seconds() / 3600
+    if not a.termes:
+        print(f"Liste des adhérents padel {data['saison']} : {len(data['membres'])} adhérents, mise à jour {fmt(data['at'])}.")
+        for o in data["offres"]:
+            print(f"  {'·' if o['club'] else '+'} {o['libelle']}")
+        print(c("  (+ : offre padel hors de la liste du club)", "gris"))
+        return 0
+    res = ad.chercher(a.termes, data)
+    quand = f"liste {data['saison']} du {fmt(data['at'])}"
+    if not res:
+        res = ad.chercher(a.termes, data, approx=True)
+        if res:
+            print(c("Aucune correspondance exacte ; orthographes proches :", "jaune"))
+    if not res:
+        print(c(f"Personne ne correspond à « {' '.join(a.termes)} » parmi les {len(data['membres'])} adhérents padel", "jaune")
+              + c(f" ({quand}).", "gris"))
+        if age_h > 1 and not a.frais:
+            print(c("Inscription toute récente ? « padel membre ... --frais » relit la liste dans ADOC.", "gris"))
+        return 1
+    print(c(f"{len(res)} adhérent(s) padel correspondant", "vert") + c(f" ({quand}) :", "gris"))
+    for m in res[:30]:
+        offres = ", ".join(m["offres"]) or "—"
+        hors = "" if m["club"] else c("  [offre hors liste du club]", "jaune")
+        print(f"  {m['prenom']} {m['nom']}  " + c(" / ".join(m["tels"]) or "pas de téléphone", "gris"))
+        print(f"      {offres}{hors}")
+    if len(res) > 30:
+        print(c(f"  … et {len(res) - 30} autres : préciser la recherche.", "gris"))
+    return 0
+
+
 def cmd_planning(a):
     tab = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
     lines = [l for l in tab.splitlines() if "padel_bot.py" in l or l.startswith("# Bot padel")]
@@ -254,6 +301,9 @@ def main(argv=None):
     add("cas", cmd_cas, "cas suspects", ["suspects"]).add_argument("-j", "--jours", type=int, default=7)
     add("annulations", cmd_annulations, "annulations", ["annul"]).add_argument("-j", "--jours", type=int, default=7)
     add("reservations", cmd_reservations, "réservations suivies", ["réservations", "resas"]).add_argument("jour", nargs="?")
+    m = add("membre", cmd_membre, "adhérent padel ? (prénom, nom, téléphone)", ["membres", "adherent", "adhérent"])
+    m.add_argument("termes", nargs="*", help="prénom, nom, téléphone (même partiels)")
+    m.add_argument("--frais", action="store_true", help="relire d'abord la liste dans ADOC")
     add("planning", cmd_planning, "planning cron", ["cron"])
     j = add("journal", cmd_journal, "journal technique", ["log", "logs"])
     j.add_argument("-n", type=int, default=25)

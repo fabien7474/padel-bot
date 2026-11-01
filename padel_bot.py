@@ -4,6 +4,7 @@ Usage :
   python padel_bot.py --login   ouvre Edge pour vous connecter une fois à ADOC (à refaire si la session expire)
   python padel_bot.py --releve    un relevé complet (Linux : lancé par cron, seule source du planning)
   python padel_bot.py --entretien visite légère d'ADOC qui garde la session vivante (Linux : cron, ~toutes les 7 min)
+  python padel_bot.py --adherents copie locale des adhérents padel de la saison (Linux : cron, 2 fois par jour)
   python padel_bot.py --verifier  contrôle que l'historique permanent n'a pas été modifié
   python padel_bot.py --forcer    relevé immédiat (identique à --releve)
   python padel_bot.py --test-alerte  envoie un e-mail de test à PADEL_ALERTE_EMAIL
@@ -573,13 +574,11 @@ def bot_status(res, prev):
             "details": res.get("detailsRead"), "dwr": res.get("dwr"), "version": ver}
 
 
-def http_keepalive():
-    """Visite légère d'ADOC sans navigateur, avec les cookies de session.json. Renvoie True si la session est vivante.
-    Le serveur ADOC (Java) ferme une session restée ~30 min sans requête : cron lance le bot toutes les 10 min."""
+def adoc_opener():
+    """Client HTTP (sans navigateur) avec les cookies de session.json. Renvoie (opener, jar, cookies bruts) ou None."""
     import http.cookiejar, urllib.request
-    from urllib.parse import urlparse
     if not COOKIES.exists():
-        return False
+        return None
     raw = json.loads(COOKIES.read_text(encoding="utf-8"))
     jar = http.cookiejar.CookieJar()
     for c in raw:
@@ -591,6 +590,17 @@ def http_keepalive():
     op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     op.addheaders = [("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"),
                      ("Accept-Language", "fr-FR,fr;q=0.9")]
+    return op, jar, raw
+
+
+def http_keepalive():
+    """Visite légère d'ADOC sans navigateur, avec les cookies de session.json. Renvoie True si la session est vivante.
+    Le serveur ADOC (Java) ferme une session restée ~30 min sans requête : cron lance le bot toutes les 10 min."""
+    from urllib.parse import urlparse
+    o = adoc_opener()
+    if not o:
+        return False
+    op, jar, raw = o
     try:
         with op.open(HOME_URL, timeout=30) as r:
             html = r.read().decode("utf-8", "replace")
@@ -793,6 +803,9 @@ if __name__ == "__main__":
             code = login()
         elif "--verifier" in args:
             sys.exit(verify_history())
+        elif "--adherents" in args:
+            import adherents
+            sys.exit(adherents.rafraichir())
         elif "--releve" in args or "--forcer" in args:
             code = run_once()
         elif "--entretien" in args:

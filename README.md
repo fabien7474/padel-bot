@@ -177,6 +177,7 @@ Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications
 | `padel cas [-j JOURS]` | cas suspects détaillés (7 derniers jours par défaut, 90 au plus) |
 | `padel annulations [-j JOURS]` | annulations (7 jours par défaut, 14 au plus) |
 | `padel reservations [JOUR]` | réservations suivies : aujourd'hui par défaut, `demain`, `tout`, `AAAA-MM-JJ` ou `JJ/MM` |
+| `padel membre TERMES [--frais]` | la personne est-elle adhérente padel cette saison ? Prénom, nom et/ou téléphone, même partiels (`padel membre Jean 06 12 34 56 78`, `padel membre dupont`, `padel membre 5678`) ; tolère une faute de frappe. Sans terme : nombre d'adhérents et offres retenues. `--frais` relit d'abord la liste dans ADOC (~30 s) |
 | `padel planning` | planning cron et prochains relevés |
 | `padel journal [-n N] [-f]` | journal technique, erreurs en rouge (`-f` : suivre en direct) |
 | `padel rapport` | ouvre le rapport HTML |
@@ -185,6 +186,8 @@ Le bot tourne en arrière-plan via cron, sans session ouverte. Les notifications
 | `padel maj` | mise à jour du bot (`git pull` + dépendances) |
 
 Le planning se change avec `crontab -e` (ou en relançant `./install-linux.sh` pour revenir au planning par défaut).
+
+**Liste des adhérents padel** (`padel membre`) : cron relit la liste dans ADOC à 3h45 et 13h45 (`padel_bot.py --adherents`, sans navigateur, environ 30 s) : recherche sur l'année d'adhésion la plus récente et les offres padel (les 9 offres indiquées par le club, plus les autres offres dont le libellé parle de padel, sauf les invitations, signalées « hors liste du club »), puis export Excel d'ADOC. La recherche dans cette copie est instantanée ; si la copie a plus de 36 heures, `padel membre` la relit d'abord. Cette copie contient des **données personnelles** (nom, prénom, téléphones, offres) : elle est rangée dans `~/.local/share/padel-bot/adherents.json`, lisible par le seul utilisateur, jamais dans `resultats/` (publié), dans `bot.log` ni sur GitHub. La liste des offres du club est dans `adherents.py` (`OFFRES_CLUB`).
 
 Attention à `crontab <fichier>` : la commande **remplace** toute la crontab par le contenu du fichier, et un fichier vide efface les tâches du bot. Pour sauvegarder puis restaurer : `crontab -l > ~/cron.bak` puis `crontab ~/cron.bak`, après avoir vérifié que `~/cron.bak` n'est pas vide.
 
@@ -254,6 +257,7 @@ Test sans Claude : `.venv/bin/python dispo.py mercredi 18h45`.
 | `install-windows.ps1` | installation et tâche planifiée Windows |
 | `install-linux.sh` | installation, tâches cron et commande `padel` sous Linux |
 | `padel`, `padel_cli.py` | commande `padel` (Linux) |
+| `adherents.py` | liste des adhérents padel (export ADOC) et recherche `padel membre` |
 | `publier-rapport.sh` | rapport consultable à distance via Tailscale |
 | `dispo.py`, `padel_mcp.py`, `install-mcp.sh` | disponibilités des pistes en direct et connecteur Claude |
 | `reconnexion-adoc.sh` | reconnexion à ADOC (raccourci de bureau « Reconnecter le bot ADOC ») |

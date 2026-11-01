@@ -24,12 +24,14 @@ grep -qE '^\s*PADEL_ALERTE_EMAIL=' .env || echo "   Alertes e-mail non configur�
 echo "4/4 Tâches planifiées (cron est la seule source du planning ; à modifier ensuite avec crontab -e)..."
 # Relevés : toutes les 20 min de 7h à 1h, une seule fois la nuit à 3h30 (heure de la machine, Europe/Paris).
 # Entretien de la session ADOC : toutes les 7 min + 0 à 2 min au hasard (soit 5 à 9 min environ), jour et nuit.
+# Liste des adhérents padel (commande « padel membre ») : copie locale relue dans ADOC à 3h45 et 13h45 (+ 0 à 10 min au hasard).
 RUN="cd $HERE && /usr/bin/flock"
 PY=".venv/bin/python padel_bot.py"
-CRON="# Bot padel : relevés (jour toutes les 20 min, nuit 3h30) et entretien de session (5 à 9 min)
+CRON="# Bot padel : relevés (jour toutes les 20 min, nuit 3h30), entretien de session (5 à 9 min), liste des adhérents (3h45, 13h45)
 */20 0,7-23 * * * sleep \$(shuf -i 0-90 -n 1); $RUN -w 600 /tmp/padel-bot.lock $PY --releve >/dev/null 2>&1
 30 3 * * * sleep \$(shuf -i 0-90 -n 1); $RUN -w 600 /tmp/padel-bot.lock $PY --releve >/dev/null 2>&1
-*/7 * * * * sleep \$(shuf -i 0-120 -n 1); $RUN -n /tmp/padel-bot.lock $PY --entretien >/dev/null 2>&1"
+*/7 * * * * sleep \$(shuf -i 0-120 -n 1); $RUN -n /tmp/padel-bot.lock $PY --entretien >/dev/null 2>&1
+45 3,13 * * * sleep \$(shuf -i 0-600 -n 1); $RUN -w 900 /tmp/padel-bot.lock $PY --adherents >/dev/null 2>&1"
 ( crontab -l 2>/dev/null | grep -v -e 'padel_bot.py' -e '^# Bot padel' ; echo "$CRON" ) | crontab -
 crontab -l | grep padel_bot.py | sed 's/^/   /'
 
