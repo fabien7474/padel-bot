@@ -227,11 +227,13 @@ Pourquoi pas Dropbox : l'application mobile affiche mal les pages HTML (ni style
 ### Demander les disponibilités à Claude (même à la voix)
 
 Le connecteur `padel_mcp.py` permet de demander à Claude, depuis l'application (iPhone compris, aussi en mode vocal) :
-« Quelles pistes de padel sont libres mercredi à 18h45 ? », « Quels créneaux libres demain ? », « Est-ce que le bot padel tourne ? ».
+« Quelles pistes de padel sont libres mercredi à 18h45 ? », « Quels créneaux libres demain ? », « Est-ce que le bot padel tourne ? »,
+« Est-ce que le 06 12 34 56 78 est adhérent padel ? », « Jean Dupont est-il adhérent ? ».
 
 - Il lit **en direct** le « Tableau de réservation » d'ADOC avec la session du bot (navigateur séparé, environ 5 secondes par question).
 - Il ne renvoie que des pistes, des horaires et des types d'occupation (réservé, en ligne, cours, entretien, tournoi) : **aucun nom ni e-mail**.
 - Les 5 pistes (Padel 1 à 5) ont des créneaux de 1h15, de 7h30 à 22h30.
+- **Adhérents** (outil `padel_adherent`, copie locale de `padel membre`) : il faut un numéro d'au moins 8 chiffres, le prénom et le nom, ou un nom de famille d'au moins 4 lettres. La réponse se limite au **prénom, au nom et à l'offre padel** des personnes trouvées (5 au plus) : jamais de téléphone ni d'e-mail, et pas de liste complète. `bot.log` note seulement le type de recherche et le nombre de résultats. Ces réponses passent par Claude, comme toute conversation.
 
 Installation sur le Beelink :
 
