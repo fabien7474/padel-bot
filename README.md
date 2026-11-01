@@ -198,6 +198,16 @@ Dans Claude (sur claude.ai, depuis un ordinateur) : **Customize → Connectors �
 
 Test sans Claude : `.venv/bin/python dispo.py mercredi 18h45`.
 
+### Après un redémarrage du Beelink
+
+Tout repart seul : cron (relevés et entretien de session), le connecteur Claude (service systemd utilisateur, actif sans ouvrir de session grâce à `loginctl enable-linger`), Tailscale, la publication du rapport et Funnel. Pour le vérifier :
+
+```bash
+cd ~/padel-bot && ./verifier-beelink.sh
+```
+
+Seule la **session ADOC** peut ne pas survivre : si le Beelink est resté éteint plus d'une demi-heure environ, ADOC l'a fermée. Le rapport passe alors en « session expirée » et il faut lancer `padel reconnecter` sur le bureau du Beelink, sur place ou par bureau à distance.
+
 ## Structure
 
 | Fichier | Rôle |
@@ -211,5 +221,6 @@ Test sans Claude : `.venv/bin/python dispo.py mercredi 18h45`.
 | `adherents.py` | liste des adhérents padel (export ADOC) et recherche `padel membre` |
 | `publier-rapport.sh` | rapport consultable à distance via Tailscale |
 | `dispo.py`, `padel_mcp.py`, `install-mcp.sh` | disponibilités des pistes en direct et connecteur Claude |
+| `verifier-beelink.sh` | contrôle après redémarrage : services, cron, Tailscale, état du bot |
 | `reconnexion-adoc.sh` | reconnexion à ADOC (raccourci de bureau « Reconnecter le bot ADOC ») |
 | `.env.example` | modèle de configuration |
